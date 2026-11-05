@@ -6,7 +6,7 @@ import pytest
 from clipped.config import Settings
 from clipped.pipeline import select_clips as select_module
 from clipped.pipeline.candidates import build_candidates, make_window, overlap_ratio, pick_peaks
-from clipped.pipeline.common import VodPaths, read_json, write_json
+from clipped.pipeline.common import VideoInfo, VodPaths, read_json, write_json
 from clipped.pipeline.llm import Assessment, final_score, streamer_talk
 from clipped.pipeline.signals import combine, smooth, spike_score
 from clipped.pipeline.topic_filter import GTA6_RE, build_mask
@@ -81,9 +81,9 @@ def test_spike_score_handles_constant_input():
 
 
 def test_combine_redistributes_chat_weight():
-    parts = {name: np.ones(3) for name in ("audio", "chat", "hype", "speech")}
-    curve, weights = combine(parts, has_chat=False)
-    assert "chat" not in weights
+    parts = {name: np.ones(3) for name in ("audio", "hype", "speech")}
+    curve, weights = combine(parts)
+    assert set(weights) == {"audio", "hype", "speech"}
     assert abs(sum(weights.values()) - 1) < 1e-9
     assert np.allclose(curve, 1.0)
 
@@ -176,8 +176,8 @@ def test_final_score_bounds():
     low = Assessment(
         reaction=0, hook=0, payoff=0, emotion=0, standalone=0, gta6_relevance=0, **base
     )
-    assert final_score(top, 1.0, 1.0) == 100.0
-    assert final_score(low, 0.0, 0.0) == 0.0
+    assert final_score(top, 1.0, 1.0, 10) == 100.0
+    assert final_score(low, 0.0, 0.0, 0) == 0.0
 
 
 def test_only_metadata_or_user_confirm_the_topic():
@@ -201,7 +201,10 @@ def _prepare_vod(tmp_path, meta):
         output.writeframes(samples.tobytes())
     write_json(paths.transcript, {"segments": _segments(12)})
     write_json(paths.chat, [])
-    write_json(paths.meta, {"video": "x.mp4", "cam": {"rect": None, "layout": "gameplay"}, **meta})
+    write_json(
+        paths.meta,
+        {"video": "x.mp4", "duration": 60.0, "cam": {"rect": None, "layout": "gameplay"}, **meta},
+    )
     return paths
 
 
@@ -230,6 +233,11 @@ def fake_llm(monkeypatch):
     monkeypatch.setattr(select_module, "assess", fake_assess)
     monkeypatch.setattr(select_module, "ensure_running", lambda cfg: None)
     monkeypatch.setattr(select_module, "unload", lambda cfg: None)
+    # Ohne Woerter im Testtranskript findet das Modell nichts; die Signale fuellen die Liste auf.
+    monkeypatch.setattr(select_module, "scan_moments", lambda *args: [])
+    monkeypatch.setattr(
+        select_module, "probe_video", lambda path: VideoInfo(1920, 1080, True, 60.0)
+    )
     return calls, relevance
 
 
@@ -286,7 +294,9 @@ def test_clip_with_slur_is_flagged_and_downgraded(tmp_path, fake_llm):
     for clip in clips:
         assert clip["warnings"] == ["slur"]
         expected = (
-            final_score(_fake_assessment(9), clip["signal_score"], clip["talk_score"])
+            final_score(
+                _fake_assessment(9), clip["signal_score"], clip["talk_score"], clip["strength"]
+            )
             * select_module.SLUR_SCORE_FACTOR
         )
         assert clip["score"] == pytest.approx(expected, abs=0.1)

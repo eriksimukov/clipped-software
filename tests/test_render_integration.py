@@ -161,8 +161,8 @@ def test_render_produces_upload_ready_video(tmp_path, source, layout, cam):
     assert video["pix_fmt"] == "yuv420p"
     assert video["r_frame_rate"] == "30/1"
     assert (audio["codec_name"], audio["sample_rate"], audio["channels"]) == ("aac", "48000", 2)
-    # Teaser (1,2 bis 3 s) + Clip (10 s) + Endkarte (2,5 s)
-    assert 13.5 < float(data["format"]["duration"]) < 16.0
+    # Clip (10 s) + Endkarte (2,5 s). Er beginnt fast mit dem Hoehepunkt, also ohne Teaser.
+    assert 12.0 < float(data["format"]["duration"]) < 13.5
     assert values[-1] == 1.0
     assert not list(out.parent.glob("*.tmp.mp4"))
 

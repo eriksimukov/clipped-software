@@ -122,3 +122,121 @@ def build_candidates(
         if len(chosen) >= limit:
             break
     return chosen
+
+
+# Fenster aus den Momenten des Modells
+CONTEXT_GAP_SECONDS = 6.0
+WANTED_AROUND_BEST = 4.0
+MIN_WINDOW_SECONDS = 6.0
+TEASER_MIN_SECONDS = 2.0
+TEASER_MAX_SECONDS = 7.0
+
+
+def window_from_moment(
+    lines: list[dict], moment: dict, min_seconds: float, max_seconds: float
+) -> tuple[int, int] | None:
+    """Gibt erste und letzte Zeile zurueck. Das Modell waehlt oft zu knapp, ohne Reaktion und Kontext."""
+    first, last, best = moment["start_line"], moment["end_line"], moment["best_line"]
+
+    def duration() -> float:
+        return lines[last]["end"] - lines[first]["start"]
+
+    def can_extend_forward() -> bool:
+        return (
+            last + 1 < len(lines)
+            and lines[last + 1]["start"] - lines[last]["end"] <= CONTEXT_GAP_SECONDS
+            and lines[last + 1]["end"] - lines[first]["start"] <= max_seconds
+        )
+
+    def can_extend_back() -> bool:
+        return (
+            first > 0
+            and lines[first]["start"] - lines[first - 1]["end"] <= CONTEXT_GAP_SECONDS
+            and lines[last]["end"] - lines[first - 1]["start"] <= max_seconds
+        )
+
+    while True:
+        after = lines[last]["end"] - lines[best]["end"]
+        before = lines[best]["start"] - lines[first]["start"]
+        # Zuerst die Reaktion nach dem besten Satz, dann der Kontext davor, dann die Mindestlaenge.
+        if after < WANTED_AROUND_BEST and can_extend_forward():
+            last += 1
+        elif before < WANTED_AROUND_BEST and can_extend_back():
+            first -= 1
+        elif duration() < min_seconds and can_extend_forward():
+            last += 1
+        elif duration() < min_seconds and can_extend_back():
+            first -= 1
+        else:
+            break
+
+    while duration() > max_seconds and first < last:
+        if best - first > last - best:
+            first += 1
+        elif last > best:
+            last -= 1
+        else:
+            first += 1
+    if duration() < MIN_WINDOW_SECONDS or duration() > max_seconds:
+        return None
+    return first, last
+
+
+def teaser_from_line(lines: list[dict], best: int, last: int) -> tuple[float, float]:
+    """Der Teaser ist die staerkste Zeile; zu kurze Zeilen bekommen die naechste dazu."""
+    end_index = best
+    while (
+        lines[end_index]["end"] - lines[best]["start"] < TEASER_MIN_SECONDS
+        and end_index < last
+        and lines[end_index + 1]["end"] - lines[best]["start"] <= TEASER_MAX_SECONDS
+    ):
+        end_index += 1
+    return lines[best]["start"], min(
+        lines[end_index]["end"], lines[best]["start"] + TEASER_MAX_SECONDS
+    )
+
+
+def _top_mean(values: list[float], start: float, end: float, count: int = 3) -> float:
+    window = sorted(values[int(start) : int(end) + 1], reverse=True)[:count]
+    return sum(window) / len(window) if window else 0.0
+
+
+def candidates_from_moments(
+    moments: list[dict],
+    lines: list[dict],
+    curve: list[float],
+    reaction: list[float],
+    min_seconds: float,
+    max_seconds: float,
+    limit: int,
+) -> list[dict]:
+    chosen: list[dict] = []
+    for moment in sorted(moments, key=lambda m: m["strength"], reverse=True):
+        if not 0 <= moment["start_line"] <= moment["end_line"] < len(lines):
+            continue
+        window = window_from_moment(lines, moment, min_seconds, max_seconds)
+        if window is None:
+            continue
+        first, last = window
+        start, end = lines[first]["start"], lines[last]["end"]
+        if any(overlap_ratio((start, end), (c["start"], c["end"])) > MAX_OVERLAP for c in chosen):
+            continue
+        best = min(max(moment["best_line"], first), last)
+        teaser_start, teaser_end = teaser_from_line(lines, best, last)
+        chosen.append(
+            {
+                "start": start,
+                "end": end,
+                "peak": lines[best]["start"],
+                "story": moment["story"],
+                "strength": moment["strength"],
+                "teaser_start": teaser_start,
+                "teaser_end": teaser_end,
+                "signal_score": _top_mean(curve, start, end),
+                "reaction_score": _top_mean(reaction, start, end),
+                "text": " ".join(lines[i]["text"] for i in range(first, last + 1)),
+            }
+        )
+        if len(chosen) >= limit:
+            break
+    return sorted(chosen, key=lambda c: c["start"])

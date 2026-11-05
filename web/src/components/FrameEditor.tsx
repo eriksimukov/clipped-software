@@ -11,10 +11,13 @@ interface Props {
   cam: Rect | null;
   showCam: boolean;
   gameCenter: number;
+  gameTop: number;
+  gameBottom: number;
   gameAspect: number;
   disabled: boolean;
   onCamChange: (rect: Rect | null) => void;
   onGameCenterChange: (center: number) => void;
+  onGameMarginsChange: (top: number, bottom: number) => void;
 }
 
 const MIN_SIZE = 32;
@@ -26,7 +29,7 @@ function evenRect([x, y, w, h]: Rect): Rect {
 
 /** Standbild des Quellvideos mit Rahmen fuer Facecam und Bildausschnitt des Spiels. */
 export function FrameEditor(props: Props) {
-  const { image, width, height, cam, showCam, gameCenter, gameAspect, disabled } = props;
+  const { image, width, height, cam, showCam, gameCenter, gameTop, gameBottom, gameAspect, disabled } = props;
   const box = useRef<HTMLDivElement>(null);
   const drag = useRef<{ mode: DragMode; startX: number; startY: number; rect: Rect } | null>(null);
   const [draft, setDraft] = useState<Rect | null>(null);
@@ -76,7 +79,8 @@ export function FrameEditor(props: Props) {
     setDraft(null);
   }
 
-  const gameWidth = Math.min(height * gameAspect, width);
+  const gameHeight = height * (1 - gameTop - gameBottom);
+  const gameWidth = Math.min(gameHeight * gameAspect, width);
   const gameLeft = clamp(gameCenter * width - gameWidth / 2, 0, width - gameWidth);
   const percent = (value: number, total: number) => `${(value / total) * 100}%`;
 
@@ -86,7 +90,12 @@ export function FrameEditor(props: Props) {
         <img src={image} alt="Standbild aus dem Quellvideo" draggable={false} />
         <div
           className="game-window"
-          style={{ left: percent(gameLeft, width), width: percent(gameWidth, width) }}
+          style={{
+            left: percent(gameLeft, width),
+            width: percent(gameWidth, width),
+            top: percent(gameTop * height, height),
+            height: percent(gameHeight, height),
+          }}
           title="Dieser Ausschnitt des Spiels ist im Clip zu sehen"
         />
         {showCam && shown && (
@@ -117,18 +126,44 @@ export function FrameEditor(props: Props) {
         )}
       </div>
       <div className="frame-controls">
-        <label>
-          Ausschnitt des Spiels
-          <input
-            type="range"
-            min={0}
-            max={1}
-            step={0.01}
-            disabled={disabled}
-            value={gameCenter}
-            onChange={(event) => props.onGameCenterChange(Number(event.target.value))}
-          />
-        </label>
+        <div className="frame-sliders">
+          <label>
+            Ausschnitt des Spiels
+            <input
+              type="range"
+              min={0}
+              max={1}
+              step={0.01}
+              disabled={disabled}
+              value={gameCenter}
+              onChange={(event) => props.onGameCenterChange(Number(event.target.value))}
+            />
+          </label>
+          <label>
+            Oben abschneiden (Chat, Overlays)
+            <input
+              type="range"
+              min={0}
+              max={0.3}
+              step={0.01}
+              disabled={disabled}
+              value={gameTop}
+              onChange={(event) => props.onGameMarginsChange(Number(event.target.value), gameBottom)}
+            />
+          </label>
+          <label>
+            Unten abschneiden
+            <input
+              type="range"
+              min={0}
+              max={0.3}
+              step={0.01}
+              disabled={disabled}
+              value={gameBottom}
+              onChange={(event) => props.onGameMarginsChange(gameTop, Number(event.target.value))}
+            />
+          </label>
+        </div>
         {showCam && !cam && (
           <button
             className="secondary"

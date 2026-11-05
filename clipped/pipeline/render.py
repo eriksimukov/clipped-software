@@ -22,7 +22,7 @@ from clipped.pipeline.effects import (
     plan_effects,
 )
 from clipped.pipeline.endcard import compose_endcard
-from clipped.pipeline.sfx import ensure_starter_pack, pick_sound
+from clipped.pipeline.sfx import pick_sound
 from clipped.pipeline.spec import ClipSpec
 from clipped.pipeline.subtitles import Part, apply_text_edits, build_ass, flatten_words
 
@@ -32,11 +32,16 @@ GAME_HEIGHT = HEIGHT - CAM_HEIGHT
 FACECAM_ZOOM_SCALE = 0.5
 OVERLAY_CAM_WIDTH = 360
 OVERLAY_CAM_POSITION = (60, 250)
-TEASER_LEAD = 0.6
-TEASER_TAIL = 1.6
-TEASER_MIN, TEASER_MAX = 1.2, 3.0
+TEASER_MIN, TEASER_MAX = 1.5, 7.0
+# Pause, die als Satzgrenze gilt. Ein Teaser darf nie mitten im Satz abreissen.
+TEASER_PAUSE = 0.3
+# Beginnt der Clip fast mit dem besten Satz, waere ein Teaser davor nur eine Wiederholung.
+TEASER_SKIP_IF_OPENING = 1.5
+MIN_CLIP_FOR_TEASER = 8.0
+# Die Hook muss sich lesen lassen: Sockel plus Zeit je Wort.
+HOOK_MIN_SECONDS = 1.5
+HOOK_SECONDS_PER_WORD = 0.4
 HOOK_AFTER_TEASER = 1.5
-HOOK_WITHOUT_TEASER = 3.0
 SFX_DIR = ASSETS_DIR / "sfx"
 FONT_FILE = ASSETS_DIR / "fonts" / "Anton-Regular.ttf"
 LOUDNESS_TOLERANCE = 0.5
@@ -72,11 +77,14 @@ def fit_aspect(
     return _even(new_x), _even(new_y), _even(new_w), _even(new_h)
 
 
-def game_crop(info: VideoInfo, center: float, aspect: float) -> tuple[int, int, int, int]:
-    """Volle Hoehe des Quellbilds, horizontal um den gewaehlten Punkt."""
-    w = min(_even(info.height * aspect), _even(info.width))
+def game_crop(
+    info: VideoInfo, center: float, aspect: float, top: float = 0.0, bottom: float = 0.0
+) -> tuple[int, int, int, int]:
+    """Ausschnitt des Spiels. Oben und unten kann etwas wegfallen, etwa wegen Chat oder Overlays."""
+    h = _even(info.height * (1 - top - bottom))
+    w = min(_even(h * aspect), _even(info.width))
     x = min(max(center * info.width - w / 2, 0), info.width - w)
-    return _even(x), 0, w, _even(info.height)
+    return _even(x), _even(info.height * top), w, h
 
 
 def _crop(rect: tuple[int, int, int, int]) -> str:
@@ -96,7 +104,9 @@ def part_video_graph(
     game_motion = motion_filter(effects, fps)
 
     if layout == "split" and spec.cam_rect:
-        game = game_crop(info, spec.game_center, WIDTH / GAME_HEIGHT)
+        game = game_crop(
+            info, spec.game_center, WIDTH / GAME_HEIGHT, spec.game_top, spec.game_bottom
+        )
         cam = fit_aspect(spec.cam_rect, WIDTH / CAM_HEIGHT, (info.width, info.height))
         cam_motion = motion_filter(effects, fps, zoom_scale=FACECAM_ZOOM_SCALE, shake=False)
         return [
@@ -131,7 +141,7 @@ def part_video_graph(
         ]
 
     # Gameplay im Vollbild; eine vorhandene Facecam liegt klein darueber.
-    game = game_crop(info, spec.game_center, WIDTH / HEIGHT)
+    game = game_crop(info, spec.game_center, WIDTH / HEIGHT, spec.game_top, spec.game_bottom)
     if spec.cam_rect:
         x, y = OVERLAY_CAM_POSITION
         return [
@@ -155,10 +165,11 @@ def part_video_graph(
 def part_audio_graph(index: int, duration: float, has_audio: bool) -> str:
     if not has_audio:
         return f"anullsrc=r=48000:cl=stereo,atrim=duration={duration:.3f}[a{index}]"
-    fade_start = max(duration - 0.04, 0.0)
+    # Weiche Enden: Harte Schnitte im Ton wirkten besonders beim Teaser abrupt.
+    fade_start = max(duration - 0.12, 0.0)
     return (
         f"[{index}:a]aresample=48000,aformat=sample_fmts=fltp:channel_layouts=stereo,"
-        f"asetpts=PTS-STARTPTS,afade=t=in:st=0:d=0.02,afade=t=out:st={fade_start:.3f}:d=0.04[a{index}]"
+        f"asetpts=PTS-STARTPTS,afade=t=in:st=0:d=0.03,afade=t=out:st={fade_start:.3f}:d=0.12[a{index}]"
     )
 
 
@@ -227,30 +238,49 @@ def build_filter_graph(
     return ";\n".join(statements)
 
 
-def teaser_range(peak: float, start: float, end: float, words: list[dict]) -> tuple[float, float]:
-    """Kurzer Ausschnitt um den Hoehepunkt, moeglichst an Wortgrenzen."""
-    first = max(peak - TEASER_LEAD, start)
-    last = min(peak + TEASER_TAIL, end)
-    nearby = [w for w in words if first - 0.5 <= w["start"] <= last + 0.5]
-    starts = [w["start"] for w in nearby if w["start"] <= first]
-    ends = [w["end"] for w in nearby if w["end"] >= last]
-    if starts:
-        first = max(starts)
-    if ends:
-        last = min(ends)
-    if last - first < TEASER_MIN:
-        last = min(first + TEASER_MIN, end)
-    if last - first > TEASER_MAX:
-        last = first + TEASER_MAX
-    return first, last
+def phrase_around(peak: float, start: float, end: float, words: list[dict]) -> tuple[float, float]:
+    """Der ganze Satz um den Hoehepunkt: Anfang und Ende liegen an Sprechpausen."""
+    if not words:
+        return max(peak - 0.5, start), min(peak + TEASER_MIN, end)
+    ordered = sorted(words, key=lambda w: w["start"])
+    index = min(range(len(ordered)), key=lambda i: abs(ordered[i]["start"] - peak))
+    first = last = index
+    while (
+        first > 0
+        and ordered[first]["start"] - ordered[first - 1]["end"] < TEASER_PAUSE
+        and ordered[index]["start"] - ordered[first - 1]["start"] < TEASER_MAX / 2
+    ):
+        first -= 1
+    while (
+        last + 1 < len(ordered)
+        and ordered[last + 1]["start"] - ordered[last]["end"] < TEASER_PAUSE
+        and ordered[last + 1]["end"] - ordered[first]["start"] <= TEASER_MAX
+    ):
+        last += 1
+    return ordered[first]["start"], ordered[last]["end"]
+
+
+def teaser_range(spec: ClipSpec, words: list[dict]) -> tuple[float, float]:
+    chosen = spec.teaser_start is not None and spec.teaser_end is not None
+    if chosen and spec.start <= spec.teaser_start < spec.teaser_end <= spec.end:
+        return spec.teaser_start, spec.teaser_end
+    return phrase_around(spec.peak, spec.start, spec.end, words)
 
 
 def build_parts(spec: ClipSpec, words: list[dict]) -> list[Part]:
-    duration = spec.end - spec.start
-    if not spec.teaser or duration < TEASER_MIN * 2:
+    """Der Teaser kommt vor den Clip, wenn er dem Zuschauer etwas Neues zeigt."""
+    if not spec.teaser or spec.end - spec.start < MIN_CLIP_FOR_TEASER:
         return [Part(spec.start, spec.end, 0.0)]
-    first, last = teaser_range(spec.peak, spec.start, spec.end, words)
+    first, last = teaser_range(spec, words)
+    if first - spec.start < TEASER_SKIP_IF_OPENING:
+        return [Part(spec.start, spec.end, 0.0)]
     return [Part(first, last, 0.0), Part(spec.start, spec.end, last - first)]
+
+
+def hook_seconds(hook_text: str, teaser_length: float) -> float:
+    """Lange genug zum Lesen und mindestens bis kurz nach dem Teaser."""
+    reading = HOOK_MIN_SECONDS + HOOK_SECONDS_PER_WORD * len(hook_text.split())
+    return max(reading, teaser_length + HOOK_AFTER_TEASER)
 
 
 def resolve_layout(spec: ClipSpec) -> str:
@@ -433,7 +463,7 @@ def render_clip(
     layout = resolve_layout(spec)
     body_end = parts[-1].out_end
     teaser_length = parts[0].duration if len(parts) > 1 else 0.0
-    hook_until = teaser_length + HOOK_AFTER_TEASER if teaser_length else HOOK_WITHOUT_TEASER
+    hook_until = hook_seconds(censor_text(spec.hook_text, censor_level), teaser_length)
 
     style = settings.style
     (work_dir / "subs.ass").write_text(
@@ -455,7 +485,6 @@ def render_clip(
     plan = plan_effects(parts, spec.peak, boundaries, spec.effects, body_end)
 
     sfx_inputs: list[SfxInput] = []
-    ensure_starter_pack(SFX_DIR)
     for number, event in enumerate(plan.sfx):
         sound = pick_sound(SFX_DIR, event.category, f"{spec.id}-{number}")
         if sound:

@@ -32,7 +32,7 @@ const EFFECTS: { id: keyof ClipSpec["effects"]; label: string; note: string }[] 
   { id: "zoom", label: "Zooms", note: "Rhythmisch an Satzgrenzen und stark am Höhepunkt" },
   { id: "shake", label: "Shake", note: "Kurzes Wackeln am Höhepunkt" },
   { id: "flash", label: "Flash", note: "Helles Aufblitzen am Höhepunkt und beim Übergang" },
-  { id: "sfx", label: "Sounds", note: "Whoosh, Riser, Impact und Pop" },
+  { id: "sfx", label: "Sounds", note: "Nur deine Dateien aus assets/sfx: whoosh beim Übergang, impact am Höhepunkt" },
 ];
 
 const BUSY = new Set(["approved", "rendering"]);
@@ -253,7 +253,9 @@ export function ClipEditor({ vodId, clipId, jobs, onError }: Props) {
         )}
       </div>
 
-      {assessment?.reason && <p className="reason lead">{assessment.reason}</p>}
+      {(clip.candidate.story || assessment?.reason) && (
+        <p className="reason lead">{clip.candidate.story || assessment?.reason}</p>
+      )}
       {clip.error && <div className="banner error">{clip.error}</div>}
       {busy && (
         <div className="banner info">
@@ -329,7 +331,7 @@ export function ClipEditor({ vodId, clipId, jobs, onError }: Props) {
               </label>
               <label className="option">
                 <input type="checkbox" disabled={busy} checked={spec.teaser} onChange={(event) => update({ teaser: event.target.checked }, 0)} />
-                Höhepunkt kurz als Teaser voranstellen
+                Stärksten Satz als Teaser voranstellen
               </label>
             </div>
           )}
@@ -382,10 +384,13 @@ export function ClipEditor({ vodId, clipId, jobs, onError }: Props) {
                   cam={spec.cam_rect}
                   showCam={spec.layout !== "blur"}
                   gameCenter={spec.game_center}
+                  gameTop={spec.game_top}
+                  gameBottom={spec.game_bottom}
                   gameAspect={GAME_ASPECT[spec.layout]}
                   disabled={busy}
                   onCamChange={(rect) => update({ cam_rect: rect }, 0)}
                   onGameCenterChange={(center) => update({ game_center: center })}
+                  onGameMarginsChange={(top, bottom) => update({ game_top: top, game_bottom: bottom })}
                 />
               )}
               <p className="hint">Änderungen am Facecam-Rahmen gelten für alle offenen Clips dieses VODs und werden für den Streamer gespeichert.</p>

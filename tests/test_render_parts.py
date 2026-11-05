@@ -24,10 +24,12 @@ from clipped.pipeline.render import (
     build_parts,
     fit_aspect,
     game_crop,
+    hook_seconds,
+    phrase_around,
     resolve_layout,
     teaser_range,
 )
-from clipped.pipeline.sfx import available_sounds, ensure_starter_pack, pick_sound
+from clipped.pipeline.sfx import available_sounds, pick_sound
 from clipped.pipeline.spec import ClipSpec, Effects, TextEdit, spec_from_candidate
 from clipped.pipeline.subtitles import (
     Part,
@@ -200,12 +202,27 @@ def test_rhythm_pulses_stay_away_from_peak():
 
 def test_plan_places_events_in_output_time():
     parts = [Part(24.0, 26.0, 0.0), Part(10.0, 40.0, 2.0)]
-    plan = plan_effects(parts, 25.0, [], Effects(), endcard_start=32.0)
+    effects = Effects(shake=True, flash=True)
+    plan = plan_effects(parts, 25.0, [], effects, endcard_start=32.0)
     impact = next(s for s in plan.sfx if s.category == "impact")
     assert impact.time == pytest.approx(2.0 + 15.0)
     assert [f.time for f in plan.flashes] == pytest.approx([2.0, 17.0])
     assert plan.parts[1].shakes[0].start == pytest.approx(15.0)
-    assert plan.parts[0].pulses[0].amount == pytest.approx(0.10)
+    assert plan.parts[0].pulses[0].amount == pytest.approx(0.06)
+
+
+def test_shake_and_flash_are_off_by_default():
+    parts = [Part(24.0, 26.0, 0.0), Part(10.0, 40.0, 2.0)]
+    plan = plan_effects(parts, 25.0, [], Effects(), 32.0)
+    assert plan.flashes == []
+    assert plan.parts[1].shakes == []
+    assert plan.parts[1].pulses
+
+
+def test_sounds_are_only_whoosh_and_impact():
+    parts = [Part(24.0, 26.0, 0.0), Part(10.0, 40.0, 2.0)]
+    plan = plan_effects(parts, 25.0, [], Effects(), 32.0)
+    assert sorted(s.category for s in plan.sfx) == ["impact", "whoosh"]
 
 
 def test_plan_respects_disabled_effects():
@@ -219,13 +236,8 @@ def test_plan_respects_disabled_effects():
 
 
 def test_shake_without_zoom_still_hides_frame_edges():
-    plan = plan_effects([Part(10.0, 40.0, 0.0)], 25.0, [], Effects(zoom=False), 30.0)
+    plan = plan_effects([Part(10.0, 40.0, 0.0)], 25.0, [], Effects(zoom=False, shake=True), 30.0)
     assert len(plan.parts[0].pulses) == 1
-
-
-def test_no_riser_when_peak_is_too_early():
-    plan = plan_effects([Part(10.0, 40.0, 0.0)], 10.5, [], Effects(), 30.0)
-    assert "riser" not in [s.category for s in plan.sfx]
 
 
 def test_flash_filter_empty_without_flashes():
@@ -260,14 +272,38 @@ def test_resolve_layout_falls_back_without_cam():
     assert resolve_layout(_spec(layout="blur")) == "blur"
 
 
-def test_teaser_range_snaps_to_words_and_limits():
-    words = [_word("a", 24.0, 24.5), _word("b", 24.6, 25.0), _word("c", 25.1, 26.8)]
-    first, last = teaser_range(25.0, 10.0, 40.0, words)
-    assert first == 24.0
-    assert last == 26.8
-    first, last = teaser_range(10.1, 10.0, 40.0, [])
-    assert first == 10.0
-    assert 1.2 <= last - first <= 3.0
+def test_teaser_is_a_whole_phrase_between_pauses():
+    words = [
+        _word("before", 20.0, 20.4),
+        _word("oh", 24.0, 24.2),
+        _word("they're", 24.3, 24.6),
+        _word("dating", 24.7, 25.1),
+        _word("that", 25.2, 25.4),
+        _word("is", 25.5, 25.6),
+        _word("cute", 25.7, 26.2),
+        _word("after", 28.0, 28.4),
+    ]
+    # Bricht nicht mitten im Satz ab, wie es der alte feste Zeitraum tat.
+    assert phrase_around(25.0, 10.0, 40.0, words) == (24.0, 26.2)
+
+
+def test_phrase_is_limited_when_speech_never_pauses():
+    words = [_word(f"w{i}", 10.0 + i * 0.3, 10.0 + i * 0.3 + 0.25) for i in range(80)]
+    first, last = phrase_around(20.0, 10.0, 40.0, words)
+    assert first < 20.0 < last
+    assert last - first <= 7.0
+
+
+def test_phrase_without_words_has_a_minimum():
+    first, last = phrase_around(25.0, 10.0, 40.0, [])
+    assert first < 25.0 < last
+
+
+def test_chosen_teaser_is_used_when_it_lies_in_the_clip():
+    spec = _spec(teaser_start=20.0, teaser_end=23.0)
+    assert teaser_range(spec, []) == (20.0, 23.0)
+    outside = _spec(start=30.0, end=50.0, peak=40.0, teaser_start=20.0, teaser_end=23.0)
+    assert teaser_range(outside, [])[0] >= 30.0
 
 
 def test_build_parts_with_and_without_teaser():
@@ -276,6 +312,28 @@ def test_build_parts_with_and_without_teaser():
     assert parts[1].out_start == pytest.approx(parts[0].duration)
     assert (parts[1].src_start, parts[1].src_end) == (10.0, 40.0)
     assert len(build_parts(_spec(teaser=False), [])) == 1
+
+
+def test_no_teaser_when_clip_already_opens_with_it():
+    spec = _spec(start=10.0, end=40.0, peak=10.5, teaser_start=10.5, teaser_end=13.0)
+    assert len(build_parts(spec, [])) == 1
+
+
+def test_no_teaser_for_very_short_clips():
+    assert len(build_parts(_spec(start=10.0, end=16.0, peak=14.0), [])) == 1
+
+
+def test_hook_stays_long_enough_to_read():
+    assert hook_seconds("New romance in GTA 6 is so cute", 0.0) == pytest.approx(1.5 + 8 * 0.4)
+    assert hook_seconds("Short", 6.0) == pytest.approx(7.5)
+
+
+def test_game_crop_applies_top_and_bottom_margins():
+    x, y, w, h = game_crop(INFO, 0.5, 1080 / 1280, top=0.085, bottom=0.0)
+    assert y == 90 or y == 91 or y == 92
+    assert y + h <= 1080
+    assert x + w <= 1392
+    assert w % 2 == 0 and h % 2 == 0
 
 
 @pytest.mark.parametrize(
@@ -414,10 +472,9 @@ def test_sample_times_are_inside_range():
 # Sounds
 
 
-def test_starter_pack_covers_all_categories_and_user_files_join(tmp_path):
-    ensure_starter_pack(tmp_path)
-    for category in ("whoosh", "impact", "riser", "pop"):
-        assert available_sounds(tmp_path, category)
+def test_only_own_sound_files_are_used(tmp_path):
+    assert available_sounds(tmp_path, "impact") == []
+    assert pick_sound(tmp_path, "impact", "seed") is None
     (tmp_path / "impact").mkdir()
     own = tmp_path / "impact" / "mine.mp3"
     own.write_bytes(b"x")

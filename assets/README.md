@@ -10,15 +10,13 @@ Die Icons zeigen Marken der jeweiligen Plattformen. Sie sind nur dafür gedacht,
 
 ## Soundeffekte
 
-`sfx/generated/` wird beim ersten Rendern von `clipped/pipeline/sfx.py` per Code erzeugt und liegt nicht im Repo. Diese Sounds sind synthetisch, es gibt also keine fremden Rechte daran.
+Es liegen keine Sounds bei. Ein früheres synthetisches Starter-Pack klang fremd und ist entfernt. Ohne eigene Dateien bleibt der Originalton unverändert.
 
 Eigene Sounds kommen in einen Ordner je Kategorie, die Software wählt dann unter allen Dateien aus:
 
 ```
 assets/sfx/whoosh/   Übergang vom Teaser zum Clip
 assets/sfx/impact/   Höhepunkt
-assets/sfx/riser/    Spannungsaufbau vor dem Höhepunkt
-assets/sfx/pop/      Einblendung von Hook und Endkarte
 ```
 
 Unterstützt werden `.wav`, `.mp3`, `.ogg`, `.flac` und `.m4a`. Eigene Dateien landen nicht im Repo. Achte bei ihnen selbst auf die Lizenz, bevor du Clips veröffentlichst.

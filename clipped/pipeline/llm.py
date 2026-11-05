@@ -16,9 +16,10 @@ from clipped.config import Llm
 # Die Hook zaehlt wenig: Das Modell bewertet sie sehr niedrig und einheitlich, weil Clips oft mitten
 # im Satz beginnen. Den Einstieg liefern ohnehin Teaser und Hook-Text.
 SCORE_WEIGHTS = {"reaction": 0.2, "hook": 0.1, "payoff": 0.3, "emotion": 0.2, "standalone": 0.2}
-LLM_SHARE = 0.6
-SIGNAL_SHARE = 0.2
-TALK_SHARE = 0.2
+LLM_SHARE = 0.45
+ENERGY_SHARE = 0.25
+STRENGTH_SHARE = 0.2
+TALK_SHARE = 0.1
 # Woerter, die ein Streamer sagt, aber kaum eine Spielfigur. Whisper hoert "chat" oft als "Chad".
 STREAMER_TALK_RE = re.compile(
     r"\b(chat|chad|bro|bruh|guys|dude|yo|oh my god|omg|no way|let'?s go|what the f\w*|"
@@ -82,7 +83,8 @@ context says this part of the stream shows GTA 6, treat talk about driving, poli
 map, characters or the world as GTA 6 and set gta6_relevance to at least 7. Set it below 4 only if \
 the streamer is clearly busy with something else, such as another game or their private life.
 
-"reason" is one sentence naming the specific thing that works or fails.
+"reason" is one sentence naming the specific thing that works or fails. If a clipper's note says what \
+happens, build the hooks and the title on that, as long as the transcript supports it.
 
 "hooks" are three different on-screen texts of at most 8 words each, in English. Each one names the \
 concrete thing the streamer reacts to, using the specific nouns from the transcript, and makes a \
@@ -114,9 +116,12 @@ def build_user_prompt(candidate: dict, streamer: str, section_confirmed: bool = 
         if section_confirmed
         else "The streamer mentions GTA 6 around this part of the stream, but it may be about something else."
     )
+    story = candidate.get("story")
+    note = f"A clipper noted what happens: {story}\n" if story else ""
     return (
         f"Streamer: {streamer or 'unknown'}\n"
         f"Context: {context}\n"
+        f"{note}"
         f"Length: {candidate['end'] - candidate['start']:.0f} seconds\n"
         f"Loudest reaction: {position:.0f} seconds in\n\n"
         f"Transcript:\n{candidate['text']}"
@@ -140,7 +145,7 @@ def assess(
     }
     last_error: Exception | None = None
     for _ in range(attempts):
-        response = _post_chat(cfg, payload)
+        response = post_chat(cfg, payload)
         try:
             return clean_assessment(
                 Assessment.model_validate_json(response.json()["message"]["content"])
@@ -150,7 +155,7 @@ def assess(
     raise ValueError(f"Keine gültige Antwort vom Modell: {last_error}")
 
 
-def _post_chat(cfg: Llm, payload: dict) -> httpx.Response:
+def post_chat(cfg: Llm, payload: dict) -> httpx.Response:
     """Wiederholt Serverfehler: Das Laden des Modells kann direkt nach Whisper kurz scheitern."""
     response = None
     for attempt in range(OLLAMA_ATTEMPTS):
@@ -215,7 +220,22 @@ def streamer_talk(text: str) -> float:
     return min(len(STREAMER_TALK_RE.findall(text)) / TALK_FULL_AT, 1.0)
 
 
-def final_score(assessment: Assessment, signal_score: float, talk_score: float = 0.0) -> float:
-    """0 bis 100. Der Wert ordnet Kandidaten nur untereinander, er sagt keine Views voraus."""
+def final_score(
+    assessment: Assessment, energy: float, talk_score: float = 0.0, strength: float = 5.0
+) -> float:
+    """0 bis 100. Der Wert ordnet Kandidaten nur untereinander, er sagt keine Views voraus.
+
+    energy ist die sichtbare Reaktion in der Facecam, ohne Facecam die allgemeine Signalkurve.
+    Sie faengt Trailer-Dialog ab, den das Modell oft fuer eine Reaktion haelt.
+    """
     llm = sum(getattr(assessment, name) * w for name, w in SCORE_WEIGHTS.items()) / 10
-    return round(100 * (LLM_SHARE * llm + SIGNAL_SHARE * signal_score + TALK_SHARE * talk_score), 1)
+    return round(
+        100
+        * (
+            LLM_SHARE * llm
+            + ENERGY_SHARE * energy
+            + STRENGTH_SHARE * strength / 10
+            + TALK_SHARE * talk_score
+        ),
+        1,
+    )

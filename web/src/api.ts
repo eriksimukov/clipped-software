@@ -23,6 +23,10 @@ export interface ClipSpec {
   layout: Layout;
   cam_rect: [number, number, number, number] | null;
   game_center: number;
+  game_top: number;
+  game_bottom: number;
+  teaser_start: number | null;
+  teaser_end: number | null;
   credit: string;
   effects: Effects;
   text_edits: TextEdit[];
@@ -48,6 +52,9 @@ export interface Candidate {
   end: number;
   peak: number;
   signal_score: number;
+  reaction_score?: number;
+  strength?: number;
+  story?: string;
   text: string;
   status: string;
   score?: number;

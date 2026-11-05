@@ -47,6 +47,10 @@ class VodPaths:
         return self.root / "signals.json"
 
     @property
+    def moments(self) -> Path:
+        return self.root / "moments.json"
+
+    @property
     def candidates(self) -> Path:
         return self.root / "candidates.json"
 

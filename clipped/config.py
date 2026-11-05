@@ -19,7 +19,7 @@ class Paths(BaseModel):
 
 
 class Clips(BaseModel):
-    min_seconds: int = 20
+    min_seconds: int = 12
     max_seconds: int = 60
     candidates_per_vod: int = 35
     language: str = "en"

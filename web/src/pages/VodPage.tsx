@@ -190,7 +190,9 @@ export function VodPage({ vodId, jobs, onError }: Props) {
                         Enthält eine Beleidigung im Ton
                       </p>
                     )}
-                    {clip.candidate.assessment?.reason && <p className="small reason">{clip.candidate.assessment.reason}</p>}
+                    {(clip.candidate.story || clip.candidate.assessment?.reason) && (
+                      <p className="small reason">{clip.candidate.story || clip.candidate.assessment?.reason}</p>
+                    )}
                     {clip.error && <p className="small error-text">{clip.error}</p>}
                     {clip.candidate.error && <p className="small error-text">{clip.candidate.error}</p>}
                     <ScoreBars clip={clip} />

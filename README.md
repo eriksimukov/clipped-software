@@ -21,7 +21,7 @@ Die Dateien liegen danach in `G:\clipped-data\export\`, je Clip eine MP4 und ein
 
 ### Was der Score bedeutet
 
-Der Score (0 bis 100) ordnet die Clips eines VODs untereinander: 60 % Einschätzung des Sprachmodells, 20 % Signale aus Lautstärke, Chat und Sprache, 20 % typische Streamer-Sprache. Der letzte Anteil hilft, Reaktionen von Spieldialog zu trennen. Der Score sagt keine Aufrufe voraus. Deine Prüfung bleibt deshalb fester Teil des Ablaufs.
+Das Sprachmodell liest das Transkript abschnittsweise und benennt selbst Momente, zu denen es eine konkrete Geschichte erzählen kann. Der Score (0 bis 100) ordnet diese Momente untereinander: 45 % Bewertung des Modells, 25 % sichtbare Reaktion in der Facecam, 20 % Einschätzung beim Lesen, 10 % typische Streamer-Sprache. Die Facecam hilft, echte Reaktionen von Spieldialog zu trennen. Der Score sagt keine Aufrufe voraus. Deine Prüfung bleibt deshalb fester Teil des Ablaufs.
 
 ### GTA-6-Filter
 
@@ -60,7 +60,7 @@ Alternativ kann die App die Cookies direkt aus dem Browser lesen. Das ist bequem
 
 ## Eigene Sounds
 
-Lege Dateien in `assets/sfx/whoosh`, `impact`, `riser` oder `pop`. Sie werden zusammen mit dem eingebauten Starter-Pack verwendet. Details und Lizenzen stehen in [assets/README.md](assets/README.md).
+Es liegen keine Sounds bei, ohne eigene Dateien bleibt der Originalton unverändert. Lege eigene Sounds in `assets/sfx/whoosh` (Übergang vom Teaser zum Clip) und `assets/sfx/impact` (Höhepunkt). Details und Lizenzen stehen in [assets/README.md](assets/README.md).
 
 ## Fremde Inhalte
 

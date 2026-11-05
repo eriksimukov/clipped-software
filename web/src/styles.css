@@ -836,10 +836,7 @@ main {
 
 .game-window {
   position: absolute;
-  top: 0;
-  bottom: 0;
-  border-left: 1px dashed var(--info);
-  border-right: 1px dashed var(--info);
+  border: 1px dashed var(--info);
   background: rgb(108 182 255 / 10%);
   pointer-events: none;
 }
@@ -908,8 +905,16 @@ main {
   flex: 1;
 }
 
+.frame-sliders {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
 .frame-controls input[type="range"] {
   accent-color: var(--info);
+  width: 100%;
 }
 
 .editor-preview {

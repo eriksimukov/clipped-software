@@ -7,16 +7,15 @@ from dataclasses import dataclass, field
 from clipped.pipeline.spec import Effects
 from clipped.pipeline.subtitles import Part
 
-PEAK_ZOOM = 0.18
+PEAK_ZOOM = 0.12
 PEAK_HOLD_SECONDS = 1.6
-RHYTHM_ZOOM = 0.06
+RHYTHM_ZOOM = 0.04
 RHYTHM_INTERVAL_SECONDS = 6.0
-TEASER_ZOOM = 0.10
+TEASER_ZOOM = 0.06
 SHAKE_SECONDS = 0.4
 SHAKE_PIXELS = 14.0
 # Ohne Zoom waere beim Wackeln der Bildrand sichtbar.
 SHAKE_MIN_ZOOM = 0.04
-RISER_SECONDS = 1.4
 
 
 @dataclass(frozen=True)
@@ -117,13 +116,10 @@ def plan_effects(
             flashes.append(Flash(main.out_start, 0.12, 0.7))
 
     if effects.sfx:
-        sfx.append(SfxEvent(0.0, "pop", 0.5))
+        # Sparsam: Echte Clips leben vom Originalton.
         if teaser:
-            sfx.append(SfxEvent(max(main.out_start - 0.22, 0.0), "whoosh", 0.65))
-        if peak_rel >= RISER_SECONDS:
-            sfx.append(SfxEvent(peak_out - RISER_SECONDS, "riser", 0.3))
-        sfx.append(SfxEvent(peak_out, "impact", 0.8))
-        sfx.append(SfxEvent(endcard_start, "pop", 0.5))
+            sfx.append(SfxEvent(max(main.out_start - 0.22, 0.0), "whoosh", 0.4))
+        sfx.append(SfxEvent(peak_out, "impact", 0.5))
 
     return EffectPlan(
         plans, sorted(flashes, key=lambda f: f.time), sorted(sfx, key=lambda s: s.time)

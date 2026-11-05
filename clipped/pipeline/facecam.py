@@ -18,7 +18,7 @@ from clipped.pipeline.common import VideoInfo
 
 MODEL_PATH = ASSETS_DIR / "facecam" / "face_detection_yunet_2023mar.onnx"
 DETECT_WIDTH = 960
-SAMPLE_FRAMES = 16
+SAMPLE_FRAMES = 24
 MIN_FACE_SCORE = 0.7
 MIN_PRESENCE = 0.4
 # Ab dieser Gesichtsbreite ist es ein Vollbild-Kamerabild statt einer eingeblendeten Facecam.
@@ -37,6 +37,19 @@ EDGE_PROMINENCE = 2.5
 MIN_OUTER_MOTION = 10.0
 OUTER_BAND_PIXELS = 6
 MAX_EDGE_CANDIDATES = 8
+# Overlays: Pixel, an denen in so vielen Frames eine Kante liegt, gehoeren nicht zum Spiel.
+OVERLAY_EDGE_THRESHOLD = 24
+OVERLAY_PRESENCE = 0.25
+OVERLAY_CLOSE_PIXELS = 15
+OVERLAY_MIN_AREA = 40
+OVERLAY_TOP_ZONE = 0.15
+OVERLAY_BOTTOM_ZONE = 0.1
+CENTER_COST = 1.5
+SPLIT_GAME_ASPECT = 1080 / 1280
+FULL_GAME_ASPECT = 9 / 16
+CROP_TOPS = tuple(i / 100 for i in range(0, 15, 1))
+CROP_BOTTOMS = tuple(i / 100 for i in range(0, 9, 2))
+CROP_CENTERS = tuple(i / 100 for i in range(44, 57))
 
 
 @dataclass(frozen=True)
@@ -192,6 +205,70 @@ def locate_cam(
     return rect, "split"
 
 
+def persistent_edges(gray_frames: np.ndarray) -> np.ndarray:
+    """Je Pixel: wie oft dort eine Kante liegt. Das Spiel aendert sich, Overlays bleiben."""
+    frames = gray_frames.astype(np.int16)
+    across = np.abs(np.diff(frames, axis=2))[:, :-1, :]
+    down = np.abs(np.diff(frames, axis=1))[:, :, :-1]
+    return (np.maximum(across, down) > OVERLAY_EDGE_THRESHOLD).mean(axis=0)
+
+
+def overlay_mask(presence: np.ndarray) -> np.ndarray:
+    """Flaechen, die zu Overlays gehoeren. Nur an den Bildraendern, wo Chat und Einblendungen sitzen.
+
+    In der Bildmitte liegen eher eingebrannte Untertitel des gezeigten Videos, und die sind Inhalt.
+    Schrift besteht aus einzelnen Kanten; geschlossen wird daraus eine zusammenhaengende Flaeche.
+    Kleine Reste danach sind Stoerungen und zaehlen nicht.
+    """
+    height = presence.shape[0]
+    closing = np.ones((OVERLAY_CLOSE_PIXELS, OVERLAY_CLOSE_PIXELS), np.uint8)
+    closed = cv2.morphologyEx(
+        (presence > OVERLAY_PRESENCE).astype(np.uint8), cv2.MORPH_CLOSE, closing
+    )
+    count, labels, stats, _ = cv2.connectedComponentsWithStats(closed, connectivity=8)
+    mask = np.zeros(presence.shape, dtype=bool)
+    for label in range(1, count):
+        if stats[label, cv2.CC_STAT_AREA] >= OVERLAY_MIN_AREA:
+            mask[labels == label] = True
+    mask[int(height * OVERLAY_TOP_ZONE) : int(height * (1 - OVERLAY_BOTTOM_ZONE))] = False
+    return mask
+
+
+def best_game_crop(
+    presence: np.ndarray, cam_rect: tuple[int, int, int, int] | None, aspect: float
+) -> dict:
+    """Waehlt den Ausschnitt des Spiels so, dass weder Chat noch Overlays noch Facecam darin liegen.
+
+    Sonst schauen Reste hinein, im Jynxzi-Test etwa die Badges der Chat-Zeilen oben rechts.
+    """
+    height, width = presence.shape
+    blocked = overlay_mask(presence)
+    if cam_rect:
+        x, y, w, h = cam_rect
+        blocked[y : y + h, x : x + w] = True
+    table = np.zeros((height + 1, width + 1))
+    table[1:, 1:] = blocked.cumsum(axis=0).cumsum(axis=1)
+
+    best = {"center": 0.5, "top": 0.0, "bottom": 0.0}
+    best_cost = float("inf")
+    for top in CROP_TOPS:
+        for bottom in CROP_BOTTOMS:
+            crop_h = height * (1 - top - bottom)
+            crop_w = min(crop_h * aspect, width)
+            for center in CROP_CENTERS:
+                x0 = int(min(max(center * width - crop_w / 2, 0), width - crop_w))
+                x1, y0 = int(x0 + crop_w), int(top * height)
+                y1 = int(y0 + crop_h)
+                count = table[y1, x1] - table[y0, x1] - table[y1, x0] + table[y0, x0]
+                share = count / (crop_w * crop_h)
+                # Jeder Overlay-Rest wiegt schwer; verlorenes Bild und Abstand zur Mitte kosten wenig.
+                cost = share * 1000 + top + bottom + abs(center - 0.5) * CENTER_COST
+                if cost < best_cost:
+                    best_cost = cost
+                    best = {"center": center, "top": top, "bottom": bottom}
+    return best
+
+
 def read_frame(video: Path | str, time: float, info: VideoInfo) -> np.ndarray | None:
     height = round(info.height * DETECT_WIDTH / info.width / 2) * 2
     cmd = [
@@ -224,7 +301,11 @@ def detect_cam(video: Path | str, times: list[float], info: VideoInfo) -> dict:
     """Ergebnis fuer meta.json: Rechteck in Quell-Pixeln (oder None) und vorgeschlagenes Layout."""
     frames = [f for f in (read_frame(video, t, info) for t in times) if f is not None]
     if len(frames) < 2:
-        return {"rect": None, "layout": "gameplay"}
+        return {
+            "rect": None,
+            "layout": "gameplay",
+            "game": {"center": 0.5, "top": 0.0, "bottom": 0.0},
+        }
 
     height, width = frames[0].shape[:2]
     detector = cv2.FaceDetectorYN.create(str(MODEL_PATH), "", (width, height), MIN_FACE_SCORE)
@@ -235,11 +316,13 @@ def detect_cam(video: Path | str, times: list[float], info: VideoInfo) -> dict:
     gray = np.stack([cv2.cvtColor(f, cv2.COLOR_BGR2GRAY) for f in frames])
 
     rect, layout = locate_cam(detections, gray)
+    aspect = SPLIT_GAME_ASPECT if layout == "split" else FULL_GAME_ASPECT
+    game = best_game_crop(persistent_edges(gray), rect, aspect)
     if rect is None:
-        return {"rect": None, "layout": layout}
+        return {"rect": None, "layout": layout, "game": game}
     scale = info.width / width
     x, y, w, h = (round(v * scale) for v in rect)
-    return {"rect": [x, y, w, h], "layout": layout}
+    return {"rect": [x, y, w, h], "layout": layout, "game": game}
 
 
 def sample_times(start: float, end: float, count: int = SAMPLE_FRAMES) -> list[float]:

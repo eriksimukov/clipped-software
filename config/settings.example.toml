@@ -5,7 +5,7 @@
 data_dir = "G:/clipped-data"
 
 [clips]
-min_seconds = 20
+min_seconds = 12
 max_seconds = 60
 candidates_per_vod = 35
 language = "en"
