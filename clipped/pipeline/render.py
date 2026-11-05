@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 import shutil
 import subprocess
 import sys
@@ -38,6 +39,9 @@ HOOK_AFTER_TEASER = 1.5
 HOOK_WITHOUT_TEASER = 3.0
 SFX_DIR = ASSETS_DIR / "sfx"
 FONT_FILE = ASSETS_DIR / "fonts" / "Anton-Regular.ttf"
+LOUDNESS_TOLERANCE = 0.5
+# Darunter ist praktisch nur Stille: Eine Verstaerkung wuerde nur Rauschen anheben.
+SILENCE_LUFS = -50.0
 REMOVE_ATTEMPTS = 10
 REMOVE_RETRY_SECONDS = 0.3
 
@@ -324,6 +328,58 @@ def _remove_partial_file(path: Path) -> None:
     print(f"Temporaere Datei konnte nicht entfernt werden: {path}")
 
 
+def measure_loudness(path: Path) -> float | None:
+    result = subprocess.run(
+        [
+            "ffmpeg",
+            "-hide_banner",
+            "-nostats",
+            "-i",
+            str(path),
+            "-vn",
+            "-af",
+            "ebur128",
+            "-f",
+            "null",
+            "-",
+        ],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        check=False,
+    )
+    found = re.findall(r"I:\s+(-?[\d.]+) LUFS", result.stderr)
+    return float(found[-1]) if found else None
+
+
+def _correct_loudness(path: Path, target: float) -> None:
+    """Der Lautheitsfilter im Rendern verfehlt auf echtem Ton das Ziel um bis zu 4 LU.
+
+    Das Messen am fertigen Ton und eine feste Verstaerkung treffen es zuverlaessig und aendern die
+    Dynamik nicht. Das Bild wird dabei nur kopiert, das kostet wenige Sekunden.
+    """
+    measured = measure_loudness(path)
+    if measured is None or measured < SILENCE_LUFS or abs(measured - target) <= LOUDNESS_TOLERANCE:
+        return
+    corrected = path.with_name(path.stem + ".loud.mp4")
+    gain = target - measured
+    cmd = [
+        "ffmpeg", "-hide_banner", "-loglevel", "error", "-y", "-i", str(path),
+        "-map", "0", "-c:v", "copy",
+        "-af", f"volume={gain:.2f}dB,alimiter=limit=0.8:level=false",
+        "-c:a", "aac", "-b:a", "192k", "-ar", "48000",
+        "-movflags", "+faststart", str(corrected),
+    ]  # fmt: skip
+    try:
+        result = subprocess.run(cmd, capture_output=True, text=True, errors="replace", check=False)
+        if result.returncode != 0:
+            raise RuntimeError(f"Lautstaerke-Korrektur fehlgeschlagen: {result.stderr[-1000:]}")
+        corrected.replace(path)
+    finally:
+        _remove_partial_file(corrected)
+
+
 def _extract_frame(video: str, time: float, out_path: Path) -> None:
     cmd = [
         "ffmpeg",
@@ -465,6 +521,8 @@ def render_clip(
     ]
     try:
         _run_with_progress(cmd, work_dir, body_end + endcard_seconds, on_progress)
+        if not preview:
+            _correct_loudness(temp_out, settings.render.target_lufs)
         temp_out.replace(out_path)
     finally:
         # Nach Abbruch oder Fehler bleibt sonst eine halbe Datei im Export-Ordner liegen.

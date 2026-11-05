@@ -314,7 +314,7 @@ export function ClipEditor({ vodId, clipId, jobs, onError }: Props) {
           {tab === "hook" && (
             <div className="panel-body">
               <fieldset disabled={busy}>
-                <legend>Vorschläge des Modells</legend>
+                <legend>Vorschläge des Modells. Prüfe sie gegen das Gesagte, das Transkript kann Hörfehler enthalten.</legend>
                 {hooks.map((hook) => (
                   <label key={hook} className="option">
                     <input type="radio" name="hook" checked={spec.hook_text === hook} onChange={() => update({ hook_text: hook }, 0)} />

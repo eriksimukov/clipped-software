@@ -88,8 +88,12 @@ the streamer is clearly busy with something else, such as another game or their 
 concrete thing the streamer reacts to, using the specific nouns from the transcript, and makes a \
 stranger curious without spoiling the payoff. Good: "They put a Walmart in the game?!", "Wait, you \
 can rob your own house?", "This NPC just roasted him". Bad, because they could fit any clip: \
-"Something big is coming", "What is happening?", "Graphics look insane". Do not quote game dialogue \
-in them. Use no slurs, no profanity and no sexual terms in hooks, title, description or hashtags."""
+"Something big is coming", "What is happening?", "Graphics look insane". Put the strongest hook first.
+
+Write hooks and titles for a viewer: never mention "the streamer", and say GTA 6 instead of "the game" \
+or "the new world". The transcript can be misheard: do not build a hook or title on a phrase that makes \
+no sense, and do not state rumours or dates as facts. Do not quote game dialogue in hooks. Use no slurs, \
+no profanity and no sexual terms in hooks, title, description or hashtags."""
 
 
 def clean_assessment(assessment: Assessment) -> Assessment:

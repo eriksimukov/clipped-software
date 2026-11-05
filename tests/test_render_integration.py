@@ -10,7 +10,7 @@ import pytest
 
 from clipped.config import Channel, Settings
 from clipped.pipeline.common import probe_video
-from clipped.pipeline.render import _run_with_progress, render_clip
+from clipped.pipeline.render import _correct_loudness, _run_with_progress, render_clip
 from clipped.pipeline.spec import ClipSpec, Effects
 
 pytestmark = pytest.mark.skipif(shutil.which("ffmpeg") is None, reason="ffmpeg fehlt")
@@ -149,7 +149,7 @@ def test_loudness_hits_target(tmp_path, source):
     render_clip(
         _spec(), source["meta"], source["segments"], _settings(tmp_path), out, tmp_path / "work"
     )
-    assert abs(_loudness(out) - -14.0) < 1.5
+    assert abs(_loudness(out) - -14.0) < 1.0
 
 
 def test_preview_is_small_and_without_teaser_shorter(tmp_path, source):
@@ -237,3 +237,45 @@ def test_failed_render_reports_ffmpeg_message(tmp_path, source):
             tmp_path / "c.mp4",
             tmp_path / "work",
         )
+
+
+def test_quiet_source_is_corrected_to_target(tmp_path):
+    """Der Filter im Rendern allein trifft bei leisem Ton nicht; die zweite Korrektur schon."""
+    video = tmp_path / "quiet.mp4"
+    subprocess.run(
+        [
+            "ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
+            "-f", "lavfi", "-i", "testsrc2=s=640x360:r=30:d=20",
+            "-f", "lavfi", "-i", "sine=frequency=300:sample_rate=48000:duration=20,volume=0.01",
+            "-c:v", "libx264", "-preset", "ultrafast", "-c:a", "aac", "-shortest", str(video),
+        ],
+        check=True,
+    )  # fmt: skip
+    out = tmp_path / "clip.mp4"
+    render_clip(
+        _spec(start=1.0, end=15.0, peak=5.0, cam_rect=None, layout="gameplay"),
+        {"video": str(video)},
+        [],
+        _settings(tmp_path),
+        out,
+        tmp_path / "work",
+    )
+    assert abs(_loudness(out) - -14.0) < 1.0
+    assert not list(out.parent.glob("*.loud.mp4"))
+    assert probe_video(out).width == 1080
+
+
+def test_silent_clip_is_not_amplified(tmp_path):
+    source = tmp_path / "silent.mp4"
+    subprocess.run(
+        [
+            "ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
+            "-f", "lavfi", "-i", "testsrc2=s=320x240:r=15:d=3",
+            "-f", "lavfi", "-i", "anullsrc=r=48000:cl=stereo",
+            "-c:v", "libx264", "-preset", "ultrafast", "-c:a", "aac", "-shortest", str(source),
+        ],
+        check=True,
+    )  # fmt: skip
+    before = source.stat().st_mtime
+    _correct_loudness(source, -14.0)
+    assert source.stat().st_mtime == before

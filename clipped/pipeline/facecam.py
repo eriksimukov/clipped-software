@@ -27,6 +27,9 @@ MAX_CAM_AREA_RATIO = 0.4
 # Suchweite ab dem Gesicht, in Gesichtsbreiten beziehungsweise -hoehen.
 SEARCH_SIDEWAYS = 3.5
 SEARCH_VERTICAL = 2.5
+# Breite des Kamerabilds, wenn kein Rand erkennbar ist. Eng genug, dass bei freigestellten
+# Streamern kein eingebrannter Text aus dem Spiel mit ins Bild rutscht.
+CAM_WIDTH_IN_FACES = 3.4
 MIN_EDGE_STRENGTH = 8.0
 # Eine Kante muss deutlich ueber dem Umfeld liegen, sonst ist sie nur Bildstruktur.
 EDGE_PROMINENCE = 2.5
@@ -78,7 +81,7 @@ def cluster_faces(detections: list[list[Face]], min_presence: float = MIN_PRESEN
 
 def _fallback_rect(face: Face, width: int, height: int) -> tuple[int, int, int, int]:
     """Uebliches 16:9-Kamerabild um das Gesicht, fuer Seiten ohne erkennbaren Rand."""
-    w = min(face.w * 4.0, width)
+    w = min(face.w * CAM_WIDTH_IN_FACES, width)
     h = min(w * 9 / 16, height)
     cx, cy = face.center
     x = min(max(cx - w / 2, 0), width - w)

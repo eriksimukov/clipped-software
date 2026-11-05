@@ -371,7 +371,7 @@ def test_cam_rect_ignores_static_edges_inside_the_room():
 def test_cam_rect_uses_frame_edges_when_no_border_exists():
     # Freigestellter Streamer in der Ecke: keine Kante, links und oben ist der Bildrand nah.
     frames = np.full((12, 540, 960), 90, dtype=np.uint8)
-    assert find_cam_rect(frames, Face(100, 100, 40, 50)) == (0, 0, 200, 174)
+    assert find_cam_rect(frames, Face(100, 100, 40, 50)) == (0, 0, 188, 166)
 
 
 def test_cam_rect_reaches_bottom_for_corner_cam_with_top_border():
@@ -384,7 +384,7 @@ def test_cam_rect_reaches_bottom_for_corner_cam_with_top_border():
 
 def test_cam_rect_falls_back_in_the_middle_of_the_frame():
     frames = np.full((12, 540, 960), 90, dtype=np.uint8)
-    assert find_cam_rect(frames, Face(460, 200, 40, 50)) == (400, 184, 160, 90)
+    assert find_cam_rect(frames, Face(460, 200, 40, 50)) == (412, 190, 136, 76)
 
 
 def test_locate_cam_layouts():
@@ -402,7 +402,7 @@ def test_locate_cam_without_visible_borders():
     rect, layout = locate_cam([[Face(100, 100, 40, 50)] for _ in range(12)], frames)
     assert layout == "split"
     # Keine Kante zu finden: Links und oben reicht der Rahmen bis zum Bildrand, sonst Standardgroesse.
-    assert rect == (0, 0, 200, 174)
+    assert rect == (0, 0, 188, 166)
 
 
 def test_sample_times_are_inside_range():
