@@ -14,7 +14,6 @@ from clipped.db.store import Store
 from clipped.pipeline.common import VideoInfo, VodPaths, probe_video, read_json, write_json
 from clipped.pipeline.export import export_paths, export_text
 from clipped.pipeline.ingest import ingest, set_time_range
-from clipped.pipeline.llm import ensure_running
 from clipped.pipeline.render import render_clip
 from clipped.pipeline.select_clips import select_clips
 from clipped.pipeline.spec import ClipSpec, spec_from_candidate
@@ -93,7 +92,8 @@ class Worker(threading.Thread):
             handler(job, self._progress_callback(job["id"]))
         except JobCancelled:
             self.store.finish_job(job["id"], "cancelled")
-            self._mark_failed(job, "Abgebrochen", cancelled=True)
+            # Ein Abbruch ist kein Fehler: Es bleibt keine Meldung am VOD oder Clip haengen.
+            self._mark_failed(job, "", cancelled=True)
         except Exception as exc:  # noqa: BLE001 - jeder Fehler soll in der Oberflaeche ankommen
             traceback.print_exc()
             message = str(exc) or exc.__class__.__name__
@@ -149,7 +149,6 @@ class Worker(threading.Thread):
         )
 
         transcribe(paths, settings, progress)
-        ensure_running(settings.llm)
         candidates = select_clips(paths, settings, progress)
 
         meta = read_json(paths.meta)

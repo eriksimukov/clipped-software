@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "clipped",
+      "runtimeExecutable": "uv",
+      "runtimeArgs": ["run", "clipped", "serve", "--port", "8765"],
+      "port": 8765
+    }
+  ]
+}

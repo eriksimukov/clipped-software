@@ -13,6 +13,7 @@ SAMPLE_RATE = 16000
 # Der Chat reagiert verzoegert: Nachrichten kommen etwa so viele Sekunden nach dem Ereignis.
 CHAT_DELAY_SECONDS = 8
 BASELINE_BLOCK_SECONDS = 300
+RMS_BLOCK_SECONDS = 600
 WEIGHTS = {"audio": 0.35, "chat": 0.35, "hype": 0.2, "speech": 0.1}
 
 # Nur eindeutige Reaktionen: Fuellwoerter wie "bro" oder "wait" fallen in Streams staendig.
@@ -28,7 +29,11 @@ def rms_db_per_second(samples: np.ndarray, rate: int = SAMPLE_RATE) -> np.ndarra
     if seconds == 0:
         return np.zeros(0)
     frames = samples[: seconds * rate].reshape(seconds, rate)
-    rms = np.sqrt(np.mean(frames**2, axis=1))
+    rms = np.empty(seconds)
+    # Abschnittsweise, damit ein langes VOD nicht kurzzeitig mehrere GB zusaetzlich belegt.
+    for first in range(0, seconds, RMS_BLOCK_SECONDS):
+        block = frames[first : first + RMS_BLOCK_SECONDS]
+        rms[first : first + RMS_BLOCK_SECONDS] = np.sqrt(np.mean(block**2, axis=1))
     return 20 * np.log10(np.maximum(rms, 1e-5))
 
 

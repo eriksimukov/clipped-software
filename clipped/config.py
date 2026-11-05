@@ -5,6 +5,7 @@ from __future__ import annotations
 import tomllib
 from pathlib import Path
 
+import tomli_w
 from pydantic import BaseModel, Field
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -79,3 +80,11 @@ def load_settings(path: Path | None = None) -> Settings:
             with candidate.open("rb") as handle:
                 return Settings.model_validate(tomllib.load(handle))
     return Settings()
+
+
+def save_settings(settings: Settings, path: Path | None = None) -> None:
+    """Schreibt erst in eine Temp-Datei, damit ein Absturz keine halbe Konfiguration hinterlaesst."""
+    target = path or CONFIG_DIR / "settings.toml"
+    temporary = target.with_suffix(".toml.tmp")
+    temporary.write_text(tomli_w.dumps(settings.model_dump(mode="json")), encoding="utf-8")
+    temporary.replace(target)

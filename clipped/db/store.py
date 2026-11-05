@@ -130,11 +130,21 @@ class Store:
     # Clips
 
     def replace_proposed_clips(self, vod_id: str, clips: list[dict]) -> None:
-        """Neue Auswahl: Vorschlaege werden ersetzt, Bearbeitetes bleibt erhalten."""
+        """Neue Auswahl: Weggefallene Vorschlaege verschwinden.
+
+        Clips, die wieder vorkommen, behalten Bearbeitungen und Entscheidungen; in Arbeit
+        befindliche und fertige Clips bleiben immer bestehen.
+        """
+        new_ids = {clip["id"] for clip in clips}
         with self._connect() as con:
-            con.execute(
-                "DELETE FROM clips WHERE vod_id=? AND status IN ('proposed', 'rejected')", (vod_id,)
-            )
+            existing = con.execute(
+                """SELECT id FROM clips WHERE vod_id=?
+                   AND status IN ('proposed', 'rejected', 'off_topic', 'failed')""",
+                (vod_id,),
+            ).fetchall()
+            for row in existing:
+                if row["id"] not in new_ids:
+                    con.execute("DELETE FROM clips WHERE vod_id=? AND id=?", (vod_id, row["id"]))
             for clip in clips:
                 con.execute(
                     """INSERT OR IGNORE INTO clips (vod_id, id, status, score, candidate, spec)

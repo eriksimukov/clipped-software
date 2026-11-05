@@ -94,7 +94,7 @@ def probe_video(path: Path) -> VideoInfo:
         cmd, capture_output=True, text=True, encoding="utf-8", errors="replace", check=False
     )
     if result.returncode != 0:
-        raise RuntimeError(f"ffprobe fehlgeschlagen fuer {path}: {result.stderr.strip()}")
+        raise RuntimeError(f"ffprobe fehlgeschlagen für {path}: {result.stderr.strip()}")
     data = json.loads(result.stdout)
     video = next((s for s in data["streams"] if s["codec_type"] == "video"), None)
     if video is None:
@@ -122,5 +122,5 @@ def probe_duration(path: Path) -> float:
         cmd, capture_output=True, text=True, encoding="utf-8", errors="replace", check=False
     )
     if result.returncode != 0:
-        raise RuntimeError(f"ffprobe fehlgeschlagen fuer {path}: {result.stderr.strip()}")
+        raise RuntimeError(f"ffprobe fehlgeschlagen für {path}: {result.stderr.strip()}")
     return float(result.stdout.strip())

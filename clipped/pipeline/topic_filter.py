@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+from typing import NamedTuple
 
 import numpy as np
 
@@ -14,25 +15,34 @@ GTA6_RE = re.compile(
 MENTION_RADIUS_SECONDS = 600
 
 
-def build_mask(meta: dict, segments: list[dict], seconds: int) -> tuple[np.ndarray, str]:
-    """Gibt je Sekunde an, ob sie infrage kommt, und nennt den Grund der Entscheidung."""
+class Topic(NamedTuple):
+    # Je Sekunde: kommt sie infrage?
+    mask: np.ndarray
+    reason: str
+    # True, wenn Nutzer oder Metadaten sagen, dass hier GTA 6 laeuft. Blosse Erwaehnungen im
+    # Gespraech reichen dafuer nicht.
+    confirmed: bool
+
+
+def build_mask(meta: dict, segments: list[dict], seconds: int) -> Topic:
+    """Staerkere Quellen gewinnen: Zeitbereich vor Kapiteln vor Titel vor Erwaehnungen."""
     mask = np.zeros(seconds, dtype=bool)
 
     time_range = meta.get("time_range")
     if time_range:
         mask[max(int(time_range[0]), 0) : int(time_range[1])] = True
-        return mask, "manueller Zeitbereich"
+        return Topic(mask, "manueller Zeitbereich", True)
 
     chapters = meta.get("chapters") or []
     matching = [c for c in chapters if GTA6_RE.search(c.get("title") or "")]
     if matching:
         for chapter in matching:
-            mask[int(chapter["start"]) : int(chapter["end"])] = True
-        return mask, f"{len(matching)} GTA-6-Kapitel"
+            mask[int(chapter["start"] or 0) : int(chapter["end"] or seconds)] = True
+        return Topic(mask, f"{len(matching)} GTA-6-Kapitel", True)
 
     if GTA6_RE.search(meta.get("title") or ""):
         mask[:] = True
-        return mask, "VOD-Titel nennt GTA 6"
+        return Topic(mask, "VOD-Titel nennt GTA 6", True)
 
     hits = 0
     for segment in segments:
@@ -40,4 +50,4 @@ def build_mask(meta: dict, segments: list[dict], seconds: int) -> tuple[np.ndarr
             hits += 1
             start = max(int(segment["start"]) - MENTION_RADIUS_SECONDS, 0)
             mask[start : int(segment["end"]) + MENTION_RADIUS_SECONDS] = True
-    return mask, f"{hits} Erwaehnungen im Transkript"
+    return Topic(mask, f"{hits} Erwähnung{'' if hits == 1 else 'en'} im Transkript", False)

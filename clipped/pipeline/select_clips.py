@@ -12,7 +12,7 @@ from clipped.config import Settings
 from clipped.pipeline.candidates import build_candidates
 from clipped.pipeline.common import VodPaths, probe_video, read_json, write_json
 from clipped.pipeline.facecam import detect_cam, sample_times
-from clipped.pipeline.llm import MIN_GTA6_RELEVANCE, assess, final_score, unload
+from clipped.pipeline.llm import MIN_GTA6_RELEVANCE, assess, ensure_running, final_score, unload
 from clipped.pipeline.signals import compute_signals
 from clipped.pipeline.topic_filter import build_mask
 
@@ -23,6 +23,7 @@ def select_clips(
     paths: VodPaths, settings: Settings, progress: Progress = lambda step, value: None
 ) -> list[dict]:
     """Speichert nach jedem Kandidaten, ein Abbruch verliert also keine Bewertungen."""
+    progress("signals", 0.0)
     compute_signals(paths)
     meta = read_json(paths.meta)
 
@@ -32,9 +33,10 @@ def select_clips(
         signals = read_json(paths.signals)
         curve = np.array(signals["curve"])
         segments = read_json(paths.transcript)["segments"]
-        mask, reason = build_mask(meta, segments, len(curve))
+        mask, reason, confirmed = build_mask(meta, segments, len(curve))
         meta["topic_reason"] = reason
         meta["topic_seconds"] = int(mask.sum())
+        meta["topic_confirmed"] = confirmed
         if "cam" not in meta and mask.any():
             allowed = np.flatnonzero(mask)
             times = sample_times(float(allowed[0]), float(allowed[-1]))
@@ -54,19 +56,30 @@ def select_clips(
             candidate["status"] = "pending"
         write_json(paths.candidates, candidates)
 
+    if any(candidate["status"] == "pending" for candidate in candidates):
+        progress("assess", 0.0)
+        ensure_running(settings.llm)
+
     try:
         for index, candidate in enumerate(candidates):
             if candidate["status"] != "pending":
                 continue
             try:
-                result = assess(candidate, meta.get("streamer", ""), settings.llm)
+                result = assess(
+                    candidate,
+                    meta.get("streamer", ""),
+                    settings.llm,
+                    section_confirmed=bool(meta.get("topic_confirmed")),
+                )
             except ValueError as exc:
                 # Ein Ausreisser soll nicht den ganzen Lauf stoppen; bleibt sichtbar in der Liste.
                 candidate.update(status="failed", error=str(exc), score=0.0)
             else:
                 candidate["assessment"] = result.model_dump()
                 candidate["score"] = final_score(result, candidate["signal_score"])
-                relevant = result.gta6_relevance >= MIN_GTA6_RELEVANCE
+                # Der vom Nutzer gesetzte Zeitbereich steht ueber der Einschaetzung des Modells.
+                manual = bool(meta.get("time_range"))
+                relevant = manual or result.gta6_relevance >= MIN_GTA6_RELEVANCE
                 candidate["status"] = "assessed" if relevant else "off_topic"
             write_json(paths.candidates, candidates)
             progress("assess", (index + 1) / len(candidates))

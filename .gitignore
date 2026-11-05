@@ -28,7 +28,7 @@ models/
 *.sqlite3
 *.db
 
-# Generierte Sounds (per scripts/make_sfx.py reproduzierbar)
+# Sounds: generierte entstehen per Code, eigene bleiben lokal
 assets/sfx/**/*.mp3
 assets/sfx/generated/
 

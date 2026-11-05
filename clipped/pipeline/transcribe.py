@@ -34,6 +34,7 @@ def transcribe(
     if paths.transcript.exists():
         return
 
+    progress("transcribe", 0.0)
     enable_cuda_dlls()
     from faster_whisper import WhisperModel
 

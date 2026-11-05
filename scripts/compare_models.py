@@ -22,8 +22,32 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from clipped.config import Llm, load_settings
 from clipped.pipeline.llm import SCORE_WEIGHTS, assess, unload
 
-# kind: strong = starker Moment, weak = langweilig, off = kein GTA 6
+# kind: strong = starker Moment, implicit = stark, aber ohne dass das Spiel genannt wird,
+# weak = langweilig, off = eindeutig kein GTA 6
 SAMPLES = [
+    (
+        "implicit",
+        (
+            "Hold on, why are the cops here? I only took one bicycle. They sent a helicopter for a bicycle! "
+            "Go, go, go, I'm going under the bridge. I made it! I actually made it! That was insane, "
+            "clip that right now, chat, did you see that?"
+        ),
+    ),
+    (
+        "implicit",
+        (
+            "Bro look at the water, look at the reflections. Every single person on this beach is doing "
+            "something different. That guy is filming me with his phone! Oh my god, I'm on the news now. "
+            "This cannot be real, this is the craziest world I have ever seen."
+        ),
+    ),
+    (
+        "implicit",
+        (
+            "Wait, she just betrayed me? She took the money and drove off! No way, no way, we did the whole "
+            "heist together and she left me with the cops. I'm actually shaking, I did not see that coming."
+        ),
+    ),
     (
         "strong",
         (
@@ -113,8 +137,9 @@ def weighted(assessment) -> float:
 
 def evaluate(model: str, host: str) -> dict:
     cfg = Llm(host=host, model=model)
-    scores: dict[str, list[float]] = {"strong": [], "weak": [], "off": []}
-    relevance: dict[str, list[int]] = {"strong": [], "weak": [], "off": []}
+    kinds = ("strong", "implicit", "weak", "off")
+    scores: dict[str, list[float]] = {kind: [] for kind in kinds}
+    relevance: dict[str, list[int]] = {kind: [] for kind in kinds}
     durations, hook_words, examples = [], [], []
     failures = 0
 
@@ -122,7 +147,7 @@ def evaluate(model: str, host: str) -> dict:
         candidate = {"start": 0.0, "end": 30.0, "peak": 15.0, "text": text}
         started = time.monotonic()
         try:
-            result = assess(candidate, "TestStreamer", cfg, attempts=1)
+            result = assess(candidate, "TestStreamer", cfg, attempts=1, section_confirmed=True)
         except ValueError:
             failures += 1
             continue
@@ -146,10 +171,13 @@ def evaluate(model: str, host: str) -> dict:
         "seconds_first": round(durations[0], 1) if durations else None,
         "seconds_median": round(statistics.median(durations), 1) if durations else None,
         "score_strong": mean(scores["strong"]),
+        "score_implicit": mean(scores["implicit"]),
         "score_weak": mean(scores["weak"]),
         "score_off": mean(scores["off"]),
         "gta6_strong": mean(relevance["strong"]),
-        "gta6_off": mean(relevance["off"]),
+        "gta6_implicit": relevance["implicit"],
+        "gta6_weak": relevance["weak"],
+        "gta6_off": relevance["off"],
         "hooks_too_long": sum(1 for words in hook_words if words > 8),
         "hooks_total": len(hook_words),
         "gpu_share": round(gpu_share, 2) if gpu_share is not None else None,

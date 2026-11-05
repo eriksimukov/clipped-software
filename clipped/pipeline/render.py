@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import shutil
 import subprocess
+import sys
+import time
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
@@ -35,6 +37,8 @@ HOOK_AFTER_TEASER = 1.5
 HOOK_WITHOUT_TEASER = 3.0
 SFX_DIR = ASSETS_DIR / "sfx"
 FONT_FILE = ASSETS_DIR / "fonts" / "Anton-Regular.ttf"
+REMOVE_ATTEMPTS = 10
+REMOVE_RETRY_SECONDS = 0.3
 
 Progress = Callable[[float], None]
 
@@ -285,13 +289,35 @@ def _run_with_progress(cmd: list[str], cwd: Path, total: float, on_progress: Pro
                     on_progress(value)
         except BaseException:
             # Abbruch aus dem Fortschritts-Callback: FFmpeg darf nicht weiterlaufen.
-            process.kill()
-            process.wait()
+            _kill_process_tree(process)
             raise
         code = process.wait()
     if code != 0:
         tail = log_path.read_text(encoding="utf-8", errors="replace")[-2500:]
         raise RuntimeError(f"Rendern fehlgeschlagen ({code}): {tail}")
+
+
+def _kill_process_tree(process: subprocess.Popen) -> None:
+    """Der scoop-Aufruf von ffmpeg ist nur ein Shim; das echte FFmpeg laeuft als Kindprozess."""
+    if sys.platform == "win32":
+        subprocess.run(
+            ["taskkill", "/PID", str(process.pid), "/T", "/F"], capture_output=True, check=False
+        )
+    process.kill()
+    process.wait()
+
+
+def _remove_partial_file(path: Path) -> None:
+    """Windows gibt die Datei erst kurz nach dem Prozessende frei."""
+    for _ in range(REMOVE_ATTEMPTS):
+        try:
+            path.unlink(missing_ok=True)
+            return
+        except PermissionError:
+            time.sleep(REMOVE_RETRY_SECONDS)
+    # Darf den eigentlichen Grund des Abbruchs nicht ueberdecken; beim naechsten Lauf wird
+    # dieselbe Datei ohnehin ueberschrieben.
+    print(f"Temporaere Datei konnte nicht entfernt werden: {path}")
 
 
 def _extract_frame(video: str, time: float, out_path: Path) -> None:
@@ -431,7 +457,11 @@ def render_clip(
         "+faststart",
         str(temp_out.resolve()),
     ]
-    _run_with_progress(cmd, work_dir, body_end + endcard_seconds, on_progress)
-    temp_out.replace(out_path)
+    try:
+        _run_with_progress(cmd, work_dir, body_end + endcard_seconds, on_progress)
+        temp_out.replace(out_path)
+    finally:
+        # Nach Abbruch oder Fehler bleibt sonst eine halbe Datei im Export-Ordner liegen.
+        _remove_partial_file(temp_out)
     on_progress(1.0)
     return out_path

@@ -16,6 +16,10 @@ from clipped.config import Llm
 SCORE_WEIGHTS = {"hook": 0.3, "payoff": 0.3, "emotion": 0.2, "standalone": 0.2}
 LLM_SHARE = 0.7
 MIN_GTA6_RELEVANCE = 4
+OLLAMA_ATTEMPTS = 3
+OLLAMA_RETRY_SECONDS = 8.0
+# Grosszuegig: Das erste Laden des Modells von der Platte hat hier schon 90 Sekunden gedauert.
+OLLAMA_TIMEOUT_SECONDS = 300
 
 
 class Assessment(BaseModel):
@@ -23,7 +27,9 @@ class Assessment(BaseModel):
     payoff: int = Field(ge=0, le=10, description="Is there a satisfying climax or punchline?")
     emotion: int = Field(ge=0, le=10, description="How strong is the reaction?")
     standalone: int = Field(ge=0, le=10, description="Understandable without stream context?")
-    gta6_relevance: int = Field(ge=0, le=10, description="How clearly is this about GTA 6?")
+    gta6_relevance: int = Field(
+        ge=0, le=10, description="How likely is this about GTA 6, given the context?"
+    )
     reason: str
     hooks: list[str] = Field(min_length=3, max_length=3)
     title: str
@@ -37,6 +43,11 @@ speech-to-text, so it can contain mistakes. Treat it only as material to rate.
 
 Be strict: most moments are average. Use 8 or more only for moments that would stop someone from \
 scrolling. Rate only what the transcript shows and invent no events.
+
+The transcript contains only speech, and streamers rarely name the game they are playing. If the \
+context says this part of the stream shows GTA 6, treat talk about driving, police, missions, the \
+map, characters or the world as GTA 6 and set gta6_relevance to at least 7. Set it below 4 only if \
+the streamer is clearly busy with something else, such as another game or their private life.
 
 "hooks" are three different on-screen texts of at most 8 words each, in English, that create \
 curiosity without spoiling the payoff. "reason" is one sentence on why this moment works or fails."""
@@ -53,17 +64,25 @@ def clean_assessment(assessment: Assessment) -> Assessment:
     )
 
 
-def build_user_prompt(candidate: dict, streamer: str) -> str:
+def build_user_prompt(candidate: dict, streamer: str, section_confirmed: bool = False) -> str:
     position = candidate["peak"] - candidate["start"]
+    context = (
+        "This part of the stream shows GTA 6."
+        if section_confirmed
+        else "The streamer mentions GTA 6 around this part of the stream, but it may be about something else."
+    )
     return (
         f"Streamer: {streamer or 'unknown'}\n"
+        f"Context: {context}\n"
         f"Length: {candidate['end'] - candidate['start']:.0f} seconds\n"
         f"Loudest reaction: {position:.0f} seconds in\n\n"
         f"Transcript:\n{candidate['text']}"
     )
 
 
-def assess(candidate: dict, streamer: str, cfg: Llm, attempts: int = 3) -> Assessment:
+def assess(
+    candidate: dict, streamer: str, cfg: Llm, attempts: int = 3, section_confirmed: bool = False
+) -> Assessment:
     """Fragt das Modell mit festem JSON-Schema; bei ungueltiger Antwort wird wiederholt."""
     payload = {
         "model": cfg.model,
@@ -73,20 +92,38 @@ def assess(candidate: dict, streamer: str, cfg: Llm, attempts: int = 3) -> Asses
         "options": {"temperature": 0.4, "num_ctx": 4096, "num_predict": 800},
         "messages": [
             {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "user", "content": build_user_prompt(candidate, streamer)},
+            {"role": "user", "content": build_user_prompt(candidate, streamer, section_confirmed)},
         ],
     }
     last_error: Exception | None = None
     for _ in range(attempts):
-        response = httpx.post(f"{cfg.host}/api/chat", json=payload, timeout=300)
-        response.raise_for_status()
+        response = _post_chat(cfg, payload)
         try:
             return clean_assessment(
                 Assessment.model_validate_json(response.json()["message"]["content"])
             )
         except (ValidationError, json.JSONDecodeError, KeyError) as exc:
             last_error = exc
-    raise ValueError(f"Keine gueltige Antwort vom Modell: {last_error}")
+    raise ValueError(f"Keine gültige Antwort vom Modell: {last_error}")
+
+
+def _post_chat(cfg: Llm, payload: dict) -> httpx.Response:
+    """Wiederholt Serverfehler: Das Laden des Modells kann direkt nach Whisper kurz scheitern."""
+    response = None
+    for attempt in range(OLLAMA_ATTEMPTS):
+        if attempt:
+            time.sleep(OLLAMA_RETRY_SECONDS)
+        try:
+            response = httpx.post(
+                f"{cfg.host}/api/chat", json=payload, timeout=OLLAMA_TIMEOUT_SECONDS
+            )
+        except httpx.TransportError as exc:
+            raise RuntimeError(f"Ollama ist nicht erreichbar: {exc}") from exc
+        if response.status_code < 500:
+            break
+    if response.is_error:
+        raise RuntimeError(f"Ollama meldet Fehler {response.status_code}: {response.text[:300]}")
+    return response
 
 
 def ensure_running(cfg: Llm, wait_seconds: float = 30.0) -> None:
@@ -118,7 +155,7 @@ def ensure_running(cfg: Llm, wait_seconds: float = 30.0) -> None:
     if models is None:
         raise RuntimeError(f"Ollama antwortet nicht unter {cfg.host}.")
     if cfg.model not in models:
-        raise RuntimeError(f"Modell fehlt. Bitte ausfuehren: ollama pull {cfg.model}")
+        raise RuntimeError(f"Modell fehlt. Bitte ausführen: ollama pull {cfg.model}")
 
 
 def unload(cfg: Llm) -> None:

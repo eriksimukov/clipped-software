@@ -27,7 +27,7 @@ def is_url(source: str) -> bool:
     return bool(URL_RE.match(source.strip()))
 
 
-def _download(url: str, paths: VodPaths, progress: Progress) -> dict:
+def _download_video(url: str, paths: VodPaths, progress: Progress) -> dict:
     import yt_dlp
 
     def hook(status: dict) -> None:
@@ -38,32 +38,31 @@ def _download(url: str, paths: VodPaths, progress: Progress) -> dict:
 
     options = {
         "format": "bv*[height<=1080]+ba/b[height<=1080]/b",
+        # H.264 dekodiert auf dem Prozessor am schnellsten und laeuft in jedem Browser.
+        "format_sort": ["res:1080", "fps", "vcodec:h264", "acodec:m4a"],
         "merge_output_format": "mp4",
         "outtmpl": str(paths.root / "source.%(ext)s"),
-        "writesubtitles": True,
-        "subtitleslangs": CHAT_LANGS,
-        # Ein fehlender Chat darf den Download nicht abbrechen.
-        "ignoreerrors": "only_download",
         "continuedl": True,
         "quiet": True,
         "no_warnings": True,
         "noprogress": True,
         "progress_hooks": [hook],
     }
-    with yt_dlp.YoutubeDL(options) as ydl:
-        info = ydl.extract_info(url, download=True)
-    if info is None:
-        raise RuntimeError(f"Download fehlgeschlagen: {url}")
+    progress("download", 0.0)
+    try:
+        with yt_dlp.YoutubeDL(options) as ydl:
+            info = ydl.extract_info(url, download=True)
+    except yt_dlp.utils.YoutubeDLError as exc:
+        raise RuntimeError(f"Download fehlgeschlagen: {exc}") from exc
 
     # requested_downloads nennt die fertige Datei; im Ordner koennten noch Teilformate liegen.
-    downloads = info.get("requested_downloads") or []
+    downloads = (info or {}).get("requested_downloads") or []
     filepath = downloads[0].get("filepath") if downloads else None
     if not filepath or not Path(filepath).is_file():
         raise RuntimeError(f"Keine Videodatei nach dem Download gefunden: {url}")
-    video = Path(filepath)
 
     return {
-        "video": str(video),
+        "video": str(Path(filepath)),
         "title": info.get("title") or "",
         "uploader": info.get("uploader") or info.get("channel") or "",
         "chapters": [
@@ -72,6 +71,30 @@ def _download(url: str, paths: VodPaths, progress: Progress) -> dict:
         ],
         "platform": info.get("extractor_key") or "",
     }
+
+
+def _download_chat(url: str, paths: VodPaths) -> None:
+    """Eigener Lauf: Scheitert der Chat, darf das weder Video noch Clips gefaehrden.
+
+    Fehlt das Replay, faellt nur das Chat-Signal weg und die anderen Signale uebernehmen.
+    """
+    import yt_dlp
+
+    options = {
+        "skip_download": True,
+        "writesubtitles": True,
+        "subtitleslangs": CHAT_LANGS,
+        "outtmpl": str(paths.root / "source.%(ext)s"),
+        "ignoreerrors": True,
+        "quiet": True,
+        "no_warnings": True,
+        "noprogress": True,
+    }
+    try:
+        with yt_dlp.YoutubeDL(options) as ydl:
+            ydl.download([url])
+    except yt_dlp.utils.YoutubeDLError as exc:
+        print(f"Chat-Replay nicht verfuegbar: {exc}")
 
 
 def _collect_chat(paths: VodPaths) -> int:
@@ -109,9 +132,12 @@ def ingest(
 
     if paths.meta.exists():
         meta = read_json(paths.meta)
+        if streamer and meta.get("streamer") != streamer:
+            meta["streamer"] = streamer
+            write_json(paths.meta, meta)
     else:
         if is_url(source):
-            meta = _download(source, paths, progress)
+            meta = _download_video(source, paths, progress)
         else:
             video = Path(source)
             if not video.is_file():
@@ -130,6 +156,9 @@ def ingest(
         write_json(paths.meta, meta)
 
     if not paths.chat.exists():
+        if is_url(source):
+            progress("chat", 0.0)
+            _download_chat(source, paths)
         meta["chat_messages"] = _collect_chat(paths)
         write_json(paths.meta, meta)
 
