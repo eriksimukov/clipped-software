@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import sys
 import time
 from pathlib import Path
 
@@ -33,6 +34,10 @@ def _add_vod_arguments(command: argparse.ArgumentParser) -> None:
 
 
 def main() -> None:
+    # Die Windows-Konsole kennt keine Emojis; Modelltexte duerfen deshalb nichts zum Absturz bringen.
+    for stream in (sys.stdout, sys.stderr):
+        stream.reconfigure(errors="replace")
+
     parser = argparse.ArgumentParser(prog="clipped")
     sub = parser.add_subparsers(dest="command", required=True)
     _add_vod_arguments(sub.add_parser("prepare", help="VOD importieren und transkribieren"))
