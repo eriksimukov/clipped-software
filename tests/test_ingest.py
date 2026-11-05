@@ -5,17 +5,21 @@ import shutil
 import subprocess
 import threading
 from pathlib import Path
+from typing import ClassVar
 
 import pytest
+import yt_dlp
 
 from clipped.config import Settings
 from clipped.pipeline.common import VodPaths, read_json, vod_id_for, write_json
 from clipped.pipeline.ingest import (
     _download_chat,
+    _download_video,
     explain_download_error,
     ingest,
     is_url,
     link_problem,
+    needs_login,
     set_time_range,
     ytdlp_options,
 )
@@ -239,3 +243,80 @@ def test_age_restriction_with_login_points_to_expired_cookies():
 )
 def test_common_download_errors_are_explained(raw, expected):
     assert expected in explain_download_error(raw, logged_in=False)
+
+
+# Anmeldung nur, wenn sie noetig ist
+
+
+class _FakeYoutubeDL:
+    """Spielt yt-dlp: Altersbeschraenkte Videos gehen nur mit Cookies."""
+
+    calls: ClassVar[list[dict]] = []
+    restricted = True
+
+    def __init__(self, options):
+        self.options = options
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_args):
+        return False
+
+    def extract_info(self, url, download):
+        type(self).calls.append(self.options)
+        if type(self).restricted and "cookiefile" not in self.options:
+            raise yt_dlp.utils.DownloadError("ERROR: [youtube] abc: Sign in to confirm your age.")
+        video = Path(self.options["outtmpl"].replace("%(ext)s", "mp4"))
+        video.write_bytes(b"video")
+        return {"title": "T", "requested_downloads": [{"filepath": str(video)}]}
+
+
+@pytest.fixture
+def fake_ytdlp(monkeypatch):
+    _FakeYoutubeDL.calls = []
+    _FakeYoutubeDL.restricted = True
+    monkeypatch.setattr(yt_dlp, "YoutubeDL", _FakeYoutubeDL)
+    return _FakeYoutubeDL
+
+
+def _settings_with_login():
+    settings = Settings()
+    settings.download.cookies_file = "C:/cookies.txt"
+    return settings
+
+
+def test_public_video_never_touches_the_login(tmp_path, fake_ytdlp):
+    fake_ytdlp.restricted = False
+    meta = _download_video(
+        "https://x.test/v", VodPaths(tmp_path), lambda *_: None, _settings_with_login()
+    )
+    assert len(fake_ytdlp.calls) == 1
+    assert "cookiefile" not in fake_ytdlp.calls[0]
+    assert meta["used_login"] is False
+
+
+def test_login_is_only_used_after_youtube_refuses(tmp_path, fake_ytdlp):
+    meta = _download_video(
+        "https://x.test/v", VodPaths(tmp_path), lambda *_: None, _settings_with_login()
+    )
+    assert ["cookiefile" in call for call in fake_ytdlp.calls] == [False, True]
+    assert meta["used_login"] is True
+
+
+def test_refusal_without_login_is_explained_and_not_retried(tmp_path, fake_ytdlp):
+    with pytest.raises(RuntimeError, match="altersbeschränkt"):
+        _download_video("https://x.test/v", VodPaths(tmp_path), lambda *_: None, Settings())
+    assert len(fake_ytdlp.calls) == 1
+
+
+def test_other_errors_do_not_bring_the_account_into_play():
+    assert needs_login("ERROR: Sign in to confirm your age")
+    assert needs_login("Sign in to confirm you\u2019re not a bot")
+    assert not needs_login("ERROR: Unable to download webpage")
+    assert not needs_login("ERROR: Video unavailable")
+
+
+def test_options_can_leave_the_login_out():
+    assert "cookiefile" not in ytdlp_options(_settings_with_login(), use_login=False)
+    assert ytdlp_options(_settings_with_login())["cookiefile"] == "C:/cookies.txt"

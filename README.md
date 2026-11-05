@@ -44,7 +44,7 @@ YouTube gibt manche Videos nur mit Anmeldung heraus, GTA-Inhalte offenbar häufi
 
 **Ohne Konto:** Du besorgst dir das Video selbst und gibst den Dateipfad an, oder nimmst einen anderen Link.
 
-**Mit Konto:** Du hinterlegst in den Einstellungen eine Anmeldung. Sie ist standardmäßig aus.
+**Mit Konto:** Du hinterlegst in den Einstellungen eine Anmeldung. Sie ist standardmäßig aus. Die App versucht jeden Download zuerst ohne Anmeldung und nimmt sie nur, wenn YouTube ablehnt.
 
 > yt-dlp warnt, dass ein Konto dabei gesperrt werden kann, vorübergehend oder dauerhaft. Nimm am besten ein Zweitkonto und nutze die Anmeldung nur, wenn es nötig ist. Eine Cookie-Datei ist so sensibel wie ein Passwort: Sie gehört weder in Chats noch ins Repo.
 

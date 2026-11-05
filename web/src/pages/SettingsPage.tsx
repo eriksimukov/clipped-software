@@ -171,7 +171,7 @@ export function SettingsPage({ onError }: { onError: (message: string) => void }
       <section className="card form">
         <h2>Anmeldung für altersbeschränkte Videos</h2>
         <p className="hint">
-          Nur nötig, wenn YouTube ein Video ohne Anmeldung nicht herausgibt. Laut yt-dlp kann ein Konto dabei gesperrt werden,
+          Nur nötig, wenn YouTube ein Video ohne Anmeldung nicht herausgibt. Die App versucht es immer zuerst ohne und nutzt die Anmeldung erst nach einer Absage. Laut yt-dlp kann ein Konto dabei gesperrt werden,
           vorübergehend oder dauerhaft. Nimm am besten ein Zweitkonto. Die Cookie-Datei ist der empfohlene Weg, die Schritte stehen
           in der README. Wenn du beides leer lässt, wird nichts verwendet.
         </p>

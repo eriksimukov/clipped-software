@@ -42,7 +42,7 @@ def has_login(settings: Settings) -> bool:
     return bool(settings.download.cookies_file or settings.download.cookies_from_browser)
 
 
-def ytdlp_options(settings: Settings) -> dict:
+def ytdlp_options(settings: Settings, use_login: bool = True) -> dict:
     """Gemeinsame Grundeinstellungen fuer Video und Chat."""
     options: dict = {
         "quiet": True,
@@ -54,11 +54,22 @@ def ytdlp_options(settings: Settings) -> dict:
         "js_runtimes": {"deno": {}, "node": {}},
     }
     download = settings.download
+    if not use_login:
+        return options
     if download.cookies_file:
         options["cookiefile"] = download.cookies_file
     elif download.cookies_from_browser:
         options["cookiesfrombrowser"] = (download.cookies_from_browser,)
     return options
+
+
+def needs_login(message: str) -> bool:
+    """Nur diese Absagen von YouTube rechtfertigen, das Konto ins Spiel zu bringen."""
+    lowered = message.lower()
+    return any(
+        phrase in lowered
+        for phrase in ("confirm your age", "age-restricted", "not a bot", "members-only")
+    )
 
 
 def explain_download_error(message: str, logged_in: bool) -> str:
@@ -106,20 +117,32 @@ def _download_video(url: str, paths: VodPaths, progress: Progress, settings: Set
             if total:
                 progress("download", status.get("downloaded_bytes", 0) / total)
 
-    options = {
-        **ytdlp_options(settings),
-        "format": "bv*[height<=1080]+ba/b[height<=1080]/b",
-        # H.264 dekodiert auf dem Prozessor am schnellsten und laeuft in jedem Browser.
-        "format_sort": ["res:1080", "fps", "vcodec:h264", "acodec:m4a"],
-        "merge_output_format": "mp4",
-        "outtmpl": str(paths.root / "source.%(ext)s"),
-        "continuedl": True,
-        "progress_hooks": [hook],
-    }
-    progress("download", 0.0)
-    try:
+    def attempt(use_login: bool) -> dict | None:
+        options = {
+            **ytdlp_options(settings, use_login),
+            "format": "bv*[height<=1080]+ba/b[height<=1080]/b",
+            # H.264 dekodiert auf dem Prozessor am schnellsten und laeuft in jedem Browser.
+            "format_sort": ["res:1080", "fps", "vcodec:h264", "acodec:m4a"],
+            "merge_output_format": "mp4",
+            "outtmpl": str(paths.root / "source.%(ext)s"),
+            "continuedl": True,
+            "progress_hooks": [hook],
+        }
         with yt_dlp.YoutubeDL(options) as ydl:
-            info = ydl.extract_info(url, download=True)
+            return ydl.extract_info(url, download=True)
+
+    progress("download", 0.0)
+    # Zuerst ohne Anmeldung: yt-dlp warnt, dass Konten gesperrt werden koennen, und raet dazu,
+    # sie nur zu nutzen, wenn es noetig ist. Oeffentliche Videos brauchen das Konto nie.
+    used_login = False
+    try:
+        try:
+            info = attempt(use_login=False)
+        except yt_dlp.utils.YoutubeDLError as exc:
+            if not (has_login(settings) and needs_login(str(exc))):
+                raise
+            used_login = True
+            info = attempt(use_login=True)
     except yt_dlp.utils.YoutubeDLError as exc:
         raise RuntimeError(explain_download_error(str(exc), has_login(settings))) from exc
 
@@ -138,10 +161,11 @@ def _download_video(url: str, paths: VodPaths, progress: Progress, settings: Set
             for c in info.get("chapters") or []
         ],
         "platform": info.get("extractor_key") or "",
+        "used_login": used_login,
     }
 
 
-def _download_chat(url: str, paths: VodPaths, settings: Settings) -> None:
+def _download_chat(url: str, paths: VodPaths, settings: Settings, use_login: bool = False) -> None:
     """Eigener Lauf: Scheitert der Chat, darf das weder Video noch Clips gefaehrden.
 
     Fehlt das Replay, faellt nur das Chat-Signal weg und die anderen Signale uebernehmen.
@@ -149,7 +173,7 @@ def _download_chat(url: str, paths: VodPaths, settings: Settings) -> None:
     import yt_dlp
 
     options = {
-        **ytdlp_options(settings),
+        **ytdlp_options(settings, use_login),
         "skip_download": True,
         "writesubtitles": True,
         "subtitleslangs": CHAT_LANGS,
@@ -227,7 +251,7 @@ def ingest(
     if not paths.chat.exists():
         if is_url(source):
             progress("chat", 0.0)
-            _download_chat(source, paths, settings)
+            _download_chat(source, paths, settings, bool(meta.get("used_login")))
         meta["chat_messages"] = _collect_chat(paths)
         write_json(paths.meta, meta)
 
