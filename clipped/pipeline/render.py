@@ -40,6 +40,8 @@ HOOK_WITHOUT_TEASER = 3.0
 SFX_DIR = ASSETS_DIR / "sfx"
 FONT_FILE = ASSETS_DIR / "fonts" / "Anton-Regular.ttf"
 LOUDNESS_TOLERANCE = 0.5
+# Der harte Einstieg in den ersten Millisekunden erzeugte im fertigen Ton Spitzen ueber 0 dBFS.
+AUDIO_FADE_IN = "afade=t=in:st=0:d=0.02"
 # Darunter ist praktisch nur Stille: Eine Verstaerkung wuerde nur Rauschen anheben.
 SILENCE_LUFS = -50.0
 REMOVE_ATTEMPTS = 10
@@ -219,7 +221,9 @@ def build_filter_graph(
         if sfx_inputs
         else "[ac]"
     )
-    statements.append(f"{mix}loudnorm=I={target_lufs:.1f}:TP=-1.5:LRA=11,aresample=48000[aout]")
+    statements.append(
+        f"{mix}loudnorm=I={target_lufs:.1f}:TP=-1.5:LRA=11,aresample=48000,{AUDIO_FADE_IN}[aout]"
+    )
     return ";\n".join(statements)
 
 
@@ -367,7 +371,7 @@ def _correct_loudness(path: Path, target: float) -> None:
     cmd = [
         "ffmpeg", "-hide_banner", "-loglevel", "error", "-y", "-i", str(path),
         "-map", "0", "-c:v", "copy",
-        "-af", f"volume={gain:.2f}dB,alimiter=limit=0.8:level=false",
+        "-af", f"volume={gain:.2f}dB,aresample=192000,alimiter=limit=0.75:level=false,aresample=48000,{AUDIO_FADE_IN}",
         "-c:a", "aac", "-b:a", "192k", "-ar", "48000",
         "-movflags", "+faststart", str(corrected),
     ]  # fmt: skip

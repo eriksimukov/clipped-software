@@ -109,6 +109,29 @@ def _loudness(path: Path) -> float:
     return float(re.findall(r"I:\s+(-?[\d.]+) LUFS", result.stderr)[-1])
 
 
+def _true_peak(path: Path) -> float:
+    result = subprocess.run(
+        [
+            "ffmpeg",
+            "-hide_banner",
+            "-nostats",
+            "-i",
+            str(path),
+            "-af",
+            "ebur128=peak=true",
+            "-f",
+            "null",
+            "-",
+        ],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        check=False,
+    )
+    return float(re.findall(r"Peak:\s+(-?[\d.]+) dBFS", result.stderr)[-1])
+
+
 @pytest.mark.parametrize(
     "layout, cam",
     [
@@ -150,6 +173,7 @@ def test_loudness_hits_target(tmp_path, source):
         _spec(), source["meta"], source["segments"], _settings(tmp_path), out, tmp_path / "work"
     )
     assert abs(_loudness(out) - -14.0) < 1.0
+    assert _true_peak(out) < -0.5
 
 
 def test_preview_is_small_and_without_teaser_shorter(tmp_path, source):
@@ -261,6 +285,7 @@ def test_quiet_source_is_corrected_to_target(tmp_path):
         tmp_path / "work",
     )
     assert abs(_loudness(out) - -14.0) < 1.0
+    assert _true_peak(out) < -0.5
     assert not list(out.parent.glob("*.loud.mp4"))
     assert probe_video(out).width == 1080
 
