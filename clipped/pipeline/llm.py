@@ -16,10 +16,11 @@ from clipped.config import Llm
 # Die Hook zaehlt wenig: Das Modell bewertet sie sehr niedrig und einheitlich, weil Clips oft mitten
 # im Satz beginnen. Den Einstieg liefern ohnehin Teaser und Hook-Text.
 SCORE_WEIGHTS = {"reaction": 0.2, "hook": 0.1, "payoff": 0.3, "emotion": 0.2, "standalone": 0.2}
-LLM_SHARE = 0.45
-ENERGY_SHARE = 0.25
+LLM_SHARE = 0.55
+ENERGY_SHARE = 0.2
 STRENGTH_SHARE = 0.2
-TALK_SHARE = 0.1
+# Klein gehalten: Auch Figuren im Trailer sagen "bro".
+TALK_SHARE = 0.05
 # Woerter, die ein Streamer sagt, aber kaum eine Spielfigur. Whisper hoert "chat" oft als "Chad".
 STREAMER_TALK_RE = re.compile(
     r"\b(chat|chad|bro|bruh|guys|dude|yo|oh my god|omg|no way|let'?s go|what the f\w*|"

@@ -183,17 +183,28 @@ def window_from_moment(
 
 
 def teaser_from_line(lines: list[dict], best: int, last: int) -> tuple[float, float]:
-    """Der Teaser ist die staerkste Zeile; zu kurze Zeilen bekommen die naechste dazu."""
+    """Der Teaser ist die staerkste Zeile; zu kurze Zeilen bekommen die naechste dazu.
+
+    Er endet immer an einem Wortende, denn im Test wirkte er sonst abgeschnitten. Ist die Zeile sehr
+    kurz, etwa ein einzelner Ausruf, laeuft das Bild noch weiter, damit er nicht vorbeihuscht.
+    """
+    start = lines[best]["start"]
     end_index = best
     while (
-        lines[end_index]["end"] - lines[best]["start"] < TEASER_MIN_SECONDS
+        lines[end_index]["end"] - start < TEASER_MIN_SECONDS
         and end_index < last
-        and lines[end_index + 1]["end"] - lines[best]["start"] <= TEASER_MAX_SECONDS
+        and lines[end_index + 1]["end"] - start <= TEASER_MAX_SECONDS
     ):
         end_index += 1
-    return lines[best]["start"], min(
-        lines[end_index]["end"], lines[best]["start"] + TEASER_MAX_SECONDS
-    )
+    end = lines[end_index]["end"]
+    if end - start > TEASER_MAX_SECONDS:
+        fitting = [
+            e for e in lines[end_index].get("word_ends", []) if e - start <= TEASER_MAX_SECONDS
+        ]
+        end = fitting[-1] if fitting else start + TEASER_MAX_SECONDS
+    if end - start < TEASER_MIN_SECONDS:
+        end = min(start + TEASER_MIN_SECONDS, lines[last]["end"])
+    return start, end
 
 
 def _top_mean(values: list[float], start: float, end: float, count: int = 3) -> float:

@@ -10,6 +10,7 @@ from clipped.pipeline.spec import TextEdit
 SENTENCE_END = re.compile(r"[.?!]$")
 UNSAFE_ASS = re.compile(r"[{}\\]")
 
+MAX_WORD_REPEATS = 4
 MAX_WORDS_PER_CHUNK = 3
 MAX_CHARS_PER_CHUNK = 15
 MAX_GAP_IN_CHUNK = 0.6
@@ -54,15 +55,32 @@ LAYOUT_TEXT = {
 }
 
 
+def remove_noise(words: list[dict]) -> list[dict]:
+    """Entfernt lange Wiederholungen. Whisper halluziniert sie bei Musik, etwa "5 5 5 5"."""
+    result: list[dict] = []
+    index = 0
+    while index < len(words):
+        token = words[index]["word"].strip(" .,!?").lower()
+        run_end = index + 1
+        while run_end < len(words) and words[run_end]["word"].strip(" .,!?").lower() == token:
+            run_end += 1
+        if run_end - index < MAX_WORD_REPEATS:
+            result.extend(words[index:run_end])
+        index = run_end
+    return result
+
+
 def flatten_words(segments: list[dict], start: float, end: float) -> list[dict]:
     """Alle Woerter, die im Zeitraum beginnen."""
-    return [
-        word
-        for segment in segments
-        if segment["end"] >= start and segment["start"] <= end
-        for word in segment.get("words", [])
-        if start <= word["start"] < end
-    ]
+    return remove_noise(
+        [
+            word
+            for segment in segments
+            if segment["end"] >= start and segment["start"] <= end
+            for word in segment.get("words", [])
+            if start <= word["start"] < end
+        ]
+    )
 
 
 def apply_text_edits(words: list[dict], edits: list[TextEdit]) -> list[dict]:

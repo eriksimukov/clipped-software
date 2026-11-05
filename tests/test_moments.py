@@ -74,7 +74,27 @@ def test_lines_break_at_pauses_and_sentence_ends():
 
 def test_lines_have_a_maximum_length():
     words = [_word(f"w{i}", i * 0.2, i * 0.2 + 0.1) for i in range(40)]
-    assert all(len(line["text"].split()) <= 16 for line in build_lines([{"words": words}]))
+    assert all(len(line["text"].split()) <= 12 for line in build_lines([{"words": words}]))
+
+
+def test_long_lines_split_at_the_biggest_pause_not_mid_phrase():
+    # Durchgehender Satz mit einer kleinen Atempause vor "oh": Dort soll die Zeile enden.
+    first = [_word(f"a{i}", i * 0.3, i * 0.3 + 0.28) for i in range(10)]
+    second = [
+        _word(w, 3.3 + i * 0.3, 3.3 + i * 0.3 + 0.28)
+        for i, w in enumerate(
+            ["oh", "they're", "dating", "oh", "my", "god", "that", "is", "so", "cute"]
+        )
+    ]
+    lines = build_lines([{"words": first + second}])
+    assert any(line["text"] == "oh they're dating oh my god that is so cute" for line in lines)
+
+
+def test_noise_repeats_are_dropped_but_real_emphasis_stays():
+    noise = [_word("5", i * 0.4) for i in range(5)] + [_word("tattoo?", 2.0)]
+    assert [line["text"] for line in build_lines([{"words": noise}])] == ["tattoo?"]
+    wait = [_word("wait,", 0.0), _word("wait,", 0.3), _word("wait.", 0.6)]
+    assert build_lines([{"words": wait}])[0]["text"] == "wait, wait, wait."
 
 
 def test_lines_join_across_segments_when_speech_continues():
@@ -247,6 +267,26 @@ def test_teaser_is_the_best_line_and_short_lines_get_the_next_one():
 def test_teaser_never_runs_past_the_clip():
     lines = [{"start": 10.0, "end": 10.5, "text": "a"}, {"start": 10.7, "end": 13.0, "text": "b"}]
     assert teaser_from_line(lines, 0, 0) == (10.0, 10.5)
+
+
+def test_short_shout_gets_enough_time_on_screen():
+    lines = [
+        {"start": 518.05, "end": 518.61, "text": "CONVERTIBLE!"},
+        {"start": 526.0, "end": 527.0, "text": "much later"},
+    ]
+    assert teaser_from_line(lines, 0, 1) == (518.05, 520.05)
+
+
+def test_long_teaser_ends_at_a_word_not_mid_word():
+    lines = [
+        {
+            "start": 100.0,
+            "end": 110.0,
+            "text": "long line",
+            "word_ends": [101.0, 103.0, 106.5, 107.5, 110.0],
+        }
+    ]
+    assert teaser_from_line(lines, 0, 0) == (100.0, 106.5)
 
 
 def test_candidates_carry_story_teaser_and_energy():

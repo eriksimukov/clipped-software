@@ -21,7 +21,7 @@ Die Dateien liegen danach in `G:\clipped-data\export\`, je Clip eine MP4 und ein
 
 ### Was der Score bedeutet
 
-Das Sprachmodell liest das Transkript abschnittsweise und benennt selbst Momente, zu denen es eine konkrete Geschichte erzählen kann. Der Score (0 bis 100) ordnet diese Momente untereinander: 45 % Bewertung des Modells, 25 % sichtbare Reaktion in der Facecam, 20 % Einschätzung beim Lesen, 10 % typische Streamer-Sprache. Die Facecam hilft, echte Reaktionen von Spieldialog zu trennen. Der Score sagt keine Aufrufe voraus. Deine Prüfung bleibt deshalb fester Teil des Ablaufs.
+Das Sprachmodell liest das Transkript abschnittsweise und benennt selbst Momente, zu denen es eine konkrete Geschichte erzählen kann. Der Score (0 bis 100) ordnet diese Momente untereinander: 55 % Bewertung des Modells, 20 % sichtbare Reaktion in der Facecam, 20 % Einschätzung beim Lesen, 5 % typische Streamer-Sprache. Die Facecam hilft, echte Reaktionen von Spieldialog zu trennen. Der Score sagt keine Aufrufe voraus. Deine Prüfung bleibt deshalb fester Teil des Ablaufs.
 
 ### GTA-6-Filter
 
