@@ -82,6 +82,11 @@ def explain_download_error(message: str, logged_in: bool) -> str:
             "später noch einmal, hinterlege unter Einstellungen eine Anmeldung oder gib die "
             "Videodatei direkt an."
         )
+    if "could not find" in lowered and "cookies database" in lowered:
+        return (
+            "Der eingestellte Browser hat auf diesem PC kein Profil. Wähle unter Einstellungen einen "
+            "anderen Browser oder nutze eine Cookie-Datei."
+        )
     if "could not copy" in lowered and "cookie" in lowered or "dpapi" in lowered:
         return (
             "Der Browser gibt seine Cookies nicht frei. Chrome und Edge sperren sie unter Windows "

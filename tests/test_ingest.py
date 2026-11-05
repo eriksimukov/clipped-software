@@ -230,6 +230,7 @@ def test_age_restriction_with_login_points_to_expired_cookies():
     ("raw", "expected"),
     [
         ("ERROR: [youtube] abc: Sign in to confirm you\u2019re not a bot", "Bot"),
+        ("ERROR: could not find firefox cookies database in 'C:\\\\x'", "kein Profil"),
         ("ERROR: Could not copy Chrome cookie database. See link", "Cookie-Datei"),
         ("ERROR: Failed to decrypt with DPAPI. See link", "Cookie-Datei"),
         ("ERROR: [youtube] abc: Private video. Sign in", "nicht öffentlich"),
