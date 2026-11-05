@@ -58,7 +58,7 @@ def spec_from_candidate(candidate: dict, meta: dict) -> ClipSpec:
         layout=cam.get("layout", "gameplay"),
         cam_rect=tuple(cam["rect"]) if cam.get("rect") else None,
         credit=meta.get("streamer", ""),
-        title=assessment.get("title", ""),
+        title=assessment.get("title") or (hooks[0] if hooks else ""),
         description=assessment.get("description", ""),
         hashtags=assessment.get("hashtags", []),
     )

@@ -8,6 +8,7 @@ from clipped.pipeline import llm
 
 CANDIDATE = {"start": 0.0, "end": 30.0, "peak": 10.0, "text": "hello"}
 VALID = {
+    "reaction": 8,
     "hook": 7,
     "payoff": 6,
     "emotion": 5,
@@ -106,3 +107,8 @@ def test_context_tells_the_model_whether_the_section_is_confirmed(replies):
     llm.assess(CANDIDATE, "S", Llm())
     assert "This part of the stream shows GTA 6." in calls[0]["messages"][1]["content"]
     assert "may be about something else" in calls[1]["messages"][1]["content"]
+
+
+def test_reason_comes_first_in_the_schema():
+    """Das Modell fuellt die Felder der Reihe nach: erst begruenden, dann bewerten."""
+    assert next(iter(llm.Assessment.model_json_schema()["properties"])) == "reason"

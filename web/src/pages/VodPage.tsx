@@ -31,6 +31,7 @@ function ScoreBars({ clip }: { clip: Clip }) {
   const a = clip.candidate.assessment;
   if (!a) return null;
   const rows: [string, number][] = [
+    ...(a.reaction === undefined ? [] : ([["Reaktion", a.reaction]] as [string, number][])),
     ["Hook", a.hook],
     ["Payoff", a.payoff],
     ["Emotion", a.emotion],
@@ -184,6 +185,11 @@ export function VodPage({ vodId, jobs, onError }: Props) {
                         <span className={`pill clip-${clip.status}`}>{CLIP_STATUS_LABELS[clip.status]}</span>
                       )}
                     </p>
+                    {clip.candidate.warnings?.includes("slur") && (
+                      <p className="small warn-text" title="Im Bild wird sie maskiert, im Ton bleibt sie hörbar. Der Score ist deshalb abgewertet.">
+                        Enthält eine Beleidigung im Ton
+                      </p>
+                    )}
                     {clip.candidate.assessment?.reason && <p className="small reason">{clip.candidate.assessment.reason}</p>}
                     {clip.error && <p className="small error-text">{clip.error}</p>}
                     {clip.candidate.error && <p className="small error-text">{clip.candidate.error}</p>}

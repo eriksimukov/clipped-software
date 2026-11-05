@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
+from clipped.pipeline.censor import censor_text
 from clipped.pipeline.spec import ClipSpec
 
 SLUG_RE = re.compile(r"[^a-z0-9]+")
@@ -29,16 +30,17 @@ def clean_hashtags(tags: list[str]) -> list[str]:
     return result[:MAX_HASHTAGS]
 
 
-def export_text(spec: ClipSpec, meta: dict) -> str:
+def export_text(spec: ClipSpec, meta: dict, censor_level: str = "slurs") -> str:
     credit_lines = []
     if spec.credit:
         credit_lines.append(f"Credit: {spec.credit}")
     if meta.get("source", "").startswith("http"):
         credit_lines.append(f"Original: {meta['source']}")
     credit = "\n".join(credit_lines)
-    description = "\n\n".join(p for p in (spec.description.strip(), credit) if p)
+    visible = censor_text(spec.description.strip(), censor_level)
+    description = "\n\n".join(p for p in (visible, credit) if p)
     return (
-        f"TITEL\n{spec.title.strip()}\n\n"
+        f"TITEL\n{censor_text(spec.title.strip(), censor_level)}\n\n"
         f"BESCHREIBUNG\n{description}\n\n"
         f"HASHTAGS\n{' '.join(clean_hashtags(spec.hashtags))}\n"
     )

@@ -154,12 +154,18 @@ def find_cam_rect(gray_frames: np.ndarray, face: Face) -> tuple[int, int, int, i
         1,
     )
 
+    # Kameras sitzen meist in einer Ecke. Dort ist der Bildrand zugleich ihr Rand, also gibt es
+    # keine Kante zu finden; freigestellte Streamer haben gar keine sichtbaren Raender.
     fx, fy, fw, fh = _fallback_rect(face, width, height)
-    new_left = left if left is not None else fx
-    new_top = top if top is not None else fy
-    new_right = right if right is not None else fx + fw
-    new_bottom = bottom if bottom is not None else fy + fh
-    return new_left, new_top, new_right - new_left, new_bottom - new_top
+    if left is None:
+        left = 0 if face.x - face.w * SEARCH_SIDEWAYS <= 0 else fx
+    if top is None:
+        top = 0 if face.y - face.h * SEARCH_VERTICAL <= 0 else fy
+    if right is None:
+        right = width if right_of_face + face.w * SEARCH_SIDEWAYS >= width else fx + fw
+    if bottom is None:
+        bottom = height if below_face + face.h * SEARCH_VERTICAL >= height else fy + fh
+    return left, top, right - left, bottom - top
 
 
 def locate_cam(

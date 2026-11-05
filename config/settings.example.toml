@@ -34,6 +34,8 @@ cookies_from_browser = ""
 [style]
 highlight_color = "#FFE500"
 subtitle_size = 148
+# none, slurs oder all: was in Untertiteln und Texten maskiert wird
+censor = "slurs"
 
 [branding]
 watermark = "@deinhandle"

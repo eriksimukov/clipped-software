@@ -21,7 +21,7 @@ Die Dateien liegen danach in `G:\clipped-data\export\`, je Clip eine MP4 und ein
 
 ### Was der Score bedeutet
 
-Der Score (0 bis 100) ordnet die Clips eines VODs untereinander: 70 % Einschätzung des Sprachmodells, 30 % Signale aus Lautstärke, Chat und Sprache. Er sagt keine Aufrufe voraus. Deine Prüfung bleibt deshalb fester Teil des Ablaufs.
+Der Score (0 bis 100) ordnet die Clips eines VODs untereinander: 60 % Einschätzung des Sprachmodells, 20 % Signale aus Lautstärke, Chat und Sprache, 20 % typische Streamer-Sprache. Der letzte Anteil hilft, Reaktionen von Spieldialog zu trennen. Der Score sagt keine Aufrufe voraus. Deine Prüfung bleibt deshalb fester Teil des Ablaufs.
 
 ### GTA-6-Filter
 

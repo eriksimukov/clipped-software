@@ -77,6 +77,10 @@ code {
   color: var(--danger);
 }
 
+.warn-text {
+  color: var(--warn);
+}
+
 .spacer {
   flex: 1;
 }

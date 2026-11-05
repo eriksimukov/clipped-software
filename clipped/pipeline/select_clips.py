@@ -10,9 +10,18 @@ import numpy as np
 
 from clipped.config import Settings
 from clipped.pipeline.candidates import build_candidates
+from clipped.pipeline.censor import contains_slur
 from clipped.pipeline.common import VodPaths, probe_video, read_json, write_json
 from clipped.pipeline.facecam import detect_cam, sample_times
-from clipped.pipeline.llm import MIN_GTA6_RELEVANCE, assess, ensure_running, final_score, unload
+from clipped.pipeline.llm import (
+    MIN_GTA6_RELEVANCE,
+    SLUR_SCORE_FACTOR,
+    assess,
+    ensure_running,
+    final_score,
+    streamer_talk,
+    unload,
+)
 from clipped.pipeline.signals import compute_signals
 from clipped.pipeline.topic_filter import build_mask
 
@@ -76,7 +85,13 @@ def select_clips(
                 candidate.update(status="failed", error=str(exc), score=0.0)
             else:
                 candidate["assessment"] = result.model_dump()
-                candidate["score"] = final_score(result, candidate["signal_score"])
+                candidate["talk_score"] = streamer_talk(candidate["text"])
+                candidate["score"] = final_score(
+                    result, candidate["signal_score"], candidate["talk_score"]
+                )
+                if contains_slur(candidate["text"]):
+                    candidate["warnings"] = ["slur"]
+                    candidate["score"] = round(candidate["score"] * SLUR_SCORE_FACTOR, 1)
                 # Der vom Nutzer gesetzte Zeitbereich steht ueber der Einschaetzung des Modells.
                 manual = bool(meta.get("time_range"))
                 relevant = manual or result.gta6_relevance >= MIN_GTA6_RELEVANCE

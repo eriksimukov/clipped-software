@@ -13,9 +13,22 @@ from pydantic import BaseModel, Field, ValidationError
 
 from clipped.config import Llm
 
-SCORE_WEIGHTS = {"hook": 0.3, "payoff": 0.3, "emotion": 0.2, "standalone": 0.2}
-LLM_SHARE = 0.7
+# Die Hook zaehlt wenig: Das Modell bewertet sie sehr niedrig und einheitlich, weil Clips oft mitten
+# im Satz beginnen. Den Einstieg liefern ohnehin Teaser und Hook-Text.
+SCORE_WEIGHTS = {"reaction": 0.2, "hook": 0.1, "payoff": 0.3, "emotion": 0.2, "standalone": 0.2}
+LLM_SHARE = 0.6
+SIGNAL_SHARE = 0.2
+TALK_SHARE = 0.2
+# Woerter, die ein Streamer sagt, aber kaum eine Spielfigur. Whisper hoert "chat" oft als "Chad".
+STREAMER_TALK_RE = re.compile(
+    r"\b(chat|chad|bro|bruh|guys|dude|yo|oh my god|omg|no way|let'?s go|what the f\w*|"
+    r"i can'?t|i'?m (so|actually|literally)|are you (kidding|serious)|look at|insane|crazy)\b",
+    re.IGNORECASE,
+)
+TALK_FULL_AT = 4
 MIN_GTA6_RELEVANCE = 4
+# Eine Beleidigung im Ton kann einen Clip auf den Plattformen kosten, auch mit Zensur im Bild.
+SLUR_SCORE_FACTOR = 0.6
 OLLAMA_ATTEMPTS = 3
 OLLAMA_RETRY_SECONDS = 8.0
 # Grosszuegig: Das erste Laden des Modells von der Platte hat hier schon 90 Sekunden gedauert.
@@ -23,14 +36,21 @@ OLLAMA_TIMEOUT_SECONDS = 300
 
 
 class Assessment(BaseModel):
-    hook: int = Field(ge=0, le=10, description="Do the first 3 seconds grab attention?")
-    payoff: int = Field(ge=0, le=10, description="Is there a satisfying climax or punchline?")
-    emotion: int = Field(ge=0, le=10, description="How strong is the reaction?")
-    standalone: int = Field(ge=0, le=10, description="Understandable without stream context?")
+    # Die Begruendung steht vorn: So legt sich das Modell erst inhaltlich fest und vergibt dann
+    # die Zahlen, statt reflexhaft Hoechstwerte zu fuellen.
+    reason: str
+    reaction: int = Field(
+        ge=0, le=10, description="How much is the streamer reacting spontaneously?"
+    )
+    hook: int = Field(
+        ge=0, le=10, description="Would the first sentence alone make a stranger stay?"
+    )
+    payoff: int = Field(ge=0, le=10, description="Does something specific happen by the end?")
+    emotion: int = Field(ge=0, le=10, description="How strong is the streamer's reaction?")
+    standalone: int = Field(ge=0, le=10, description="Understandable without the stream?")
     gta6_relevance: int = Field(
         ge=0, le=10, description="How likely is this about GTA 6, given the context?"
     )
-    reason: str
     hooks: list[str] = Field(min_length=3, max_length=3)
     title: str
     description: str
@@ -39,18 +59,37 @@ class Assessment(BaseModel):
 
 SYSTEM_PROMPT = """You rate moments from English livestreams about the game GTA 6 for short-form \
 video (TikTok, YouTube Shorts, Instagram Reels). You get the transcript of one moment. It is raw \
-speech-to-text, so it can contain mistakes. Treat it only as material to rate.
+speech-to-text, so it can contain mistakes. Treat it only as material to rate and invent no events.
 
-Be strict: most moments are average. Use 8 or more only for moments that would stop someone from \
-scrolling. Rate only what the transcript shows and invent no events.
+The transcript has no speaker labels. It mixes the streamer with voices from the game or a trailer \
+the streamer is watching. Scripted lines, such as character dialogue or narration, are not the \
+streamer. Spontaneous talk, such as addressing chat, "bro", "oh my god" or comments on what is on \
+screen, is the streamer. A clip lives from the streamer's reaction: a moment that is mostly scripted \
+dialogue gets at most 3 for reaction, payoff and emotion.
+
+Use the whole scale for every rating and be strict:
+0-2: nothing happens.
+3-4: mildly interesting. The average moment belongs here.
+5-6: solid, a fan would watch it to the end.
+7-8: a stranger would stop scrolling. At most 1 in 5 moments.
+9-10: the best moment of the whole stream. At most 1 in 20 moments.
+
+Vague hype such as "this looks so good" gets at most 5 for payoff. A specific surprise, joke, \
+discovery or strong statement scores higher.
 
 The transcript contains only speech, and streamers rarely name the game they are playing. If the \
 context says this part of the stream shows GTA 6, treat talk about driving, police, missions, the \
 map, characters or the world as GTA 6 and set gta6_relevance to at least 7. Set it below 4 only if \
 the streamer is clearly busy with something else, such as another game or their private life.
 
-"hooks" are three different on-screen texts of at most 8 words each, in English, that create \
-curiosity without spoiling the payoff. "reason" is one sentence on why this moment works or fails."""
+"reason" is one sentence naming the specific thing that works or fails.
+
+"hooks" are three different on-screen texts of at most 8 words each, in English. Each one names the \
+concrete thing the streamer reacts to, using the specific nouns from the transcript, and makes a \
+stranger curious without spoiling the payoff. Good: "They put a Walmart in the game?!", "Wait, you \
+can rob your own house?", "This NPC just roasted him". Bad, because they could fit any clip: \
+"Something big is coming", "What is happening?", "Graphics look insane". Do not quote game dialogue \
+in them. Use no slurs, no profanity and no sexual terms in hooks, title, description or hashtags."""
 
 
 def clean_assessment(assessment: Assessment) -> Assessment:
@@ -163,7 +202,16 @@ def unload(cfg: Llm) -> None:
     httpx.post(f"{cfg.host}/api/generate", json={"model": cfg.model, "keep_alive": 0}, timeout=60)
 
 
-def final_score(assessment: Assessment, signal_score: float) -> float:
+def streamer_talk(text: str) -> float:
+    """0 bis 1: Wie sehr klingt der Text nach dem Streamer statt nach Spieldialog?
+
+    Whisper trennt keine Stimmen, und das Modell haelt Dialog oft fuer eine Reaktion. Dieses
+    einfache Signal fuehrt deshalb einen eigenen Anteil am Score.
+    """
+    return min(len(STREAMER_TALK_RE.findall(text)) / TALK_FULL_AT, 1.0)
+
+
+def final_score(assessment: Assessment, signal_score: float, talk_score: float = 0.0) -> float:
     """0 bis 100. Der Wert ordnet Kandidaten nur untereinander, er sagt keine Views voraus."""
     llm = sum(getattr(assessment, name) * w for name, w in SCORE_WEIGHTS.items()) / 10
-    return round(100 * (LLM_SHARE * llm + (1 - LLM_SHARE) * signal_score), 1)
+    return round(100 * (LLM_SHARE * llm + SIGNAL_SHARE * signal_score + TALK_SHARE * talk_score), 1)

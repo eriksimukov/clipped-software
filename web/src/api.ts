@@ -32,6 +32,7 @@ export interface ClipSpec {
 }
 
 export interface Assessment {
+  reaction?: number;
   hook: number;
   payoff: number;
   emotion: number;
@@ -51,6 +52,7 @@ export interface Candidate {
   status: string;
   score?: number;
   error?: string;
+  warnings?: string[];
   assessment?: Assessment;
 }
 
@@ -155,7 +157,7 @@ export interface Settings {
   llm: { host: string; model: string };
   render: { width: number; height: number; fps: number; video_encoder: string; target_lufs: number };
   branding: { watermark: string; endcard_title: string; endcard_seconds: number; channels: Channel[] };
-  style: { highlight_color: string; subtitle_size: number };
+  style: { highlight_color: string; subtitle_size: number; censor: "none" | "slurs" | "all" };
   download: { cookies_file: string; cookies_from_browser: string };
 }
 

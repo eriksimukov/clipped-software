@@ -11,6 +11,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from clipped.config import ASSETS_DIR, Settings
+from clipped.pipeline.censor import censor_text
 from clipped.pipeline.common import VideoInfo, probe_video
 from clipped.pipeline.effects import (
     EffectPlan,
@@ -51,14 +52,17 @@ def _even(value: float) -> int:
 def fit_aspect(
     rect: tuple[int, int, int, int], aspect: float, frame: tuple[int, int]
 ) -> tuple[int, int, int, int]:
-    """Groesster Ausschnitt mit dem Seitenverhaeltnis innerhalb des Rechtecks, zentriert."""
+    """Groesster Ausschnitt mit dem Seitenverhaeltnis innerhalb des Rechtecks.
+
+    Horizontal zentriert, vertikal an der Oberkante: Koepfe sitzen oben im Kamerabild.
+    """
     x, y, w, h = rect
     if w / h > aspect:
         new_w, new_h = h * aspect, h
     else:
         new_w, new_h = w, w / aspect
     new_x = min(max(x + (w - new_w) / 2, 0), frame[0] - new_w)
-    new_y = min(max(y + (h - new_h) / 2, 0), frame[1] - new_h)
+    new_y = min(max(y, 0), frame[1] - new_h)
     return _even(new_x), _even(new_y), _even(new_w), _even(new_h)
 
 
@@ -364,6 +368,8 @@ def render_clip(
 
     words = apply_text_edits(flatten_words(segments, spec.start, spec.end), spec.text_edits)
     parts = build_parts(spec, words)
+    censor_level = settings.style.censor
+    visible_words = [{**w, "word": censor_text(w["word"], censor_level)} for w in words]
     layout = resolve_layout(spec)
     body_end = parts[-1].out_end
     teaser_length = parts[0].duration if len(parts) > 1 else 0.0
@@ -373,9 +379,9 @@ def render_clip(
     (work_dir / "subs.ass").write_text(
         build_ass(
             parts,
-            words,
+            visible_words,
             layout,
-            spec.hook_text,
+            censor_text(spec.hook_text, censor_level),
             hook_until,
             settings.branding.watermark,
             spec.credit,

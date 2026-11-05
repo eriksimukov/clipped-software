@@ -95,7 +95,7 @@ def main() -> None:
                 args.preview,
                 lambda value, name=spec.id: _print_progress(f"render {name}", value),
             )
-            text_path.write_text(export_text(spec, meta), encoding="utf-8")
+            text_path.write_text(export_text(spec, meta, settings.style.censor), encoding="utf-8")
             print(f"\n{video_path}")
 
     print(f"\nFertig in {time.monotonic() - started:.0f} s: {paths.root}")

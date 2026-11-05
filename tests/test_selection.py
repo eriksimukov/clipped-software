@@ -7,7 +7,7 @@ from clipped.config import Settings
 from clipped.pipeline import select_clips as select_module
 from clipped.pipeline.candidates import build_candidates, make_window, overlap_ratio, pick_peaks
 from clipped.pipeline.common import VodPaths, read_json, write_json
-from clipped.pipeline.llm import Assessment, final_score
+from clipped.pipeline.llm import Assessment, final_score, streamer_talk
 from clipped.pipeline.signals import combine, smooth, spike_score
 from clipped.pipeline.topic_filter import GTA6_RE, build_mask
 
@@ -170,10 +170,14 @@ def test_final_score_bounds():
         "description": "d",
         "hashtags": [],
     }
-    top = Assessment(hook=10, payoff=10, emotion=10, standalone=10, gta6_relevance=10, **base)
-    low = Assessment(hook=0, payoff=0, emotion=0, standalone=0, gta6_relevance=0, **base)
-    assert final_score(top, 1.0) == 100.0
-    assert final_score(low, 0.0) == 0.0
+    top = Assessment(
+        reaction=10, hook=10, payoff=10, emotion=10, standalone=10, gta6_relevance=10, **base
+    )
+    low = Assessment(
+        reaction=0, hook=0, payoff=0, emotion=0, standalone=0, gta6_relevance=0, **base
+    )
+    assert final_score(top, 1.0, 1.0) == 100.0
+    assert final_score(low, 0.0, 0.0) == 0.0
 
 
 def test_only_metadata_or_user_confirm_the_topic():
@@ -209,7 +213,9 @@ def _fake_assessment(relevance):
         "description": "d",
         "hashtags": [],
     }
-    return Assessment(hook=5, payoff=5, emotion=5, standalone=5, gta6_relevance=relevance, **base)
+    return Assessment(
+        reaction=5, hook=5, payoff=5, emotion=5, standalone=5, gta6_relevance=relevance, **base
+    )
 
 
 @pytest.fixture
@@ -265,3 +271,35 @@ def test_finished_assessments_survive_a_restart(tmp_path, fake_llm):
     assert count > 0
     select_module.select_clips(paths, Settings())
     assert len(calls) == count
+
+
+def test_clip_with_slur_is_flagged_and_downgraded(tmp_path, fake_llm):
+    _, relevance = fake_llm
+    relevance["value"] = 9
+    paths = _prepare_vod(tmp_path, {"title": "GTA 6"})
+    segments = _segments(12)
+    for segment in segments:
+        segment["text"] = "you know i got a nigga outside"
+    write_json(paths.transcript, {"segments": segments})
+    clips = select_module.select_clips(paths, Settings())
+    assert clips
+    for clip in clips:
+        assert clip["warnings"] == ["slur"]
+        expected = (
+            final_score(_fake_assessment(9), clip["signal_score"], clip["talk_score"])
+            * select_module.SLUR_SCORE_FACTOR
+        )
+        assert clip["score"] == pytest.approx(expected, abs=0.1)
+
+
+def test_streamer_talk_tells_reactions_from_dialogue():
+    reaction = "oh my god chat look at this bro, no way"
+    dialogue = "Lucia, Jason, please meet Andres de Leon. Should we go, gentlemen?"
+    assert streamer_talk(reaction) == 1.0
+    assert streamer_talk(dialogue) == 0.0
+    assert streamer_talk("Chad, look at the cars") == 0.5
+
+
+def test_streamer_talk_lifts_the_score():
+    assessment = _fake_assessment(9)
+    assert final_score(assessment, 0.5, 1.0) > final_score(assessment, 0.5, 0.0)

@@ -184,7 +184,7 @@ class Worker(threading.Thread):
             False,
             lambda v: progress("render", v),
         )
-        text_path.write_text(export_text(spec, meta), encoding="utf-8")
+        text_path.write_text(export_text(spec, meta, settings.style.censor), encoding="utf-8")
         shutil.rmtree(work_dir, ignore_errors=True)
         self.store.update_clip(
             job["vod_id"],

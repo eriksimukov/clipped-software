@@ -336,7 +336,7 @@ export function ClipEditor({ vodId, clipId, jobs, onError }: Props) {
 
           {tab === "subs" && (
             <div className="panel-body">
-              <p className="hint">Korrigiere Verhörer direkt in der Zeile. Großbuchstaben setzt der Renderer automatisch.</p>
+              <p className="hint">Korrigiere Verhörer direkt in der Zeile, eine leere Zeile entfällt. So kannst du auch Dialog aus dem Spiel entfernen. Großbuchstaben setzt der Renderer automatisch.</p>
               {clip.lines.length === 0 && <p className="muted small">In diesem Clip wurde nichts gesprochen.</p>}
               <ul className="sub-list">
                 {clip.lines.map((line) => (

@@ -40,16 +40,17 @@ class Part:
 class TextLayout:
     """Vertikale Positionen; alles bleibt innerhalb der Flaechen, die die Apps nicht ueberdecken."""
 
-    hook_y: int
+    # Oberkante der Hook: Sie laeuft nach unten, damit sie das Gesicht nicht ueberdeckt.
+    hook_top: int
     sub_y: int
     watermark_y: int = 1450
     credit_y: int = 170
 
 
 LAYOUT_TEXT = {
-    "split": TextLayout(hook_y=700, sub_y=1130),
-    "gameplay": TextLayout(hook_y=660, sub_y=1130),
-    "blur": TextLayout(hook_y=420, sub_y=1340),
+    "split": TextLayout(hook_top=560, sub_y=1130),
+    "gameplay": TextLayout(hook_top=520, sub_y=1130),
+    "blur": TextLayout(hook_top=240, sub_y=1340),
 }
 
 
@@ -211,7 +212,7 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
     if hook:
         events.append(
             f"Dialogue: 2,{ass_time(0)},{ass_time(min(hook_until, body_end))},Hook,,0,0,0,,"
-            f"{{\\an5\\pos(540,{positions.hook_y})\\fad(0,120)"
+            f"{{\\an8\\pos(540,{positions.hook_top})\\fad(0,120)"
             f"\\fscx70\\fscy70\\t(0,110,\\fscx100\\fscy100)}}{hook}"
         )
     if watermark:

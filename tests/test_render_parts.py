@@ -4,6 +4,7 @@ import re
 import numpy as np
 import pytest
 
+from clipped.pipeline.censor import censor_text, contains_slur
 from clipped.pipeline.common import VideoInfo
 from clipped.pipeline.effects import (
     PartEffects,
@@ -160,7 +161,7 @@ def test_ass_marks_active_word_and_places_hook_and_marks():
     )
     assert r"{\c&H00E5FF&}HELLO{\c&HFFFFFF&} THERE" in ass
     assert r"HELLO {\c&H00E5FF&}THERE" in ass
-    assert r"\pos(540,700)" in ass
+    assert r"\an8\pos(540,560)" in ass
     assert "@me" in ass
     assert "via Name" in ass
 
@@ -239,6 +240,11 @@ def test_fit_aspect_keeps_ratio_and_stays_inside():
     assert abs(w / h - 1080 / 640) < 0.02
     assert x >= 40 and y >= 770 and x + w <= 520 and y + h <= 1040
     assert all(v % 2 == 0 for v in (x, y, w, h))
+
+
+def test_fit_aspect_keeps_top_edge_when_trimming_height():
+    # Koepfe sitzen oben: Beschnitten wird unten, nicht mittig.
+    assert fit_aspect((0, 682, 632, 398), 1080 / 640, (1920, 1080)) == (0, 682, 632, 374)
 
 
 def test_game_crop_clamps_to_frame():
@@ -362,9 +368,23 @@ def test_cam_rect_ignores_static_edges_inside_the_room():
     assert find_cam_rect(frames, Face(130, 420, 40, 50)) == (30, 380, 240, 135)
 
 
-def test_cam_rect_falls_back_without_border():
+def test_cam_rect_uses_frame_edges_when_no_border_exists():
+    # Freigestellter Streamer in der Ecke: keine Kante, links und oben ist der Bildrand nah.
     frames = np.full((12, 540, 960), 90, dtype=np.uint8)
-    assert find_cam_rect(frames, Face(100, 100, 40, 50)) == (40, 84, 160, 90)
+    assert find_cam_rect(frames, Face(100, 100, 40, 50)) == (0, 0, 200, 174)
+
+
+def test_cam_rect_reaches_bottom_for_corner_cam_with_top_border():
+    frames = np.stack([np.full((540, 960), level, dtype=np.uint8) for level in range(20, 240, 20)])
+    frames[:, 341:, :260] = 90
+    x, y, _w, h = find_cam_rect(frames, Face(70, 380, 70, 90))
+    assert (x, y) == (0, 341)
+    assert y + h == 540
+
+
+def test_cam_rect_falls_back_in_the_middle_of_the_frame():
+    frames = np.full((12, 540, 960), 90, dtype=np.uint8)
+    assert find_cam_rect(frames, Face(460, 200, 40, 50)) == (400, 184, 160, 90)
 
 
 def test_locate_cam_layouts():
@@ -377,12 +397,12 @@ def test_locate_cam_layouts():
     assert locate_cam([[] for _ in range(12)], frames) == (None, "gameplay")
 
 
-def test_locate_cam_uses_fallback_when_everything_is_static():
+def test_locate_cam_without_visible_borders():
     frames = np.full((12, 540, 960), 90, dtype=np.uint8)
     rect, layout = locate_cam([[Face(100, 100, 40, 50)] for _ in range(12)], frames)
     assert layout == "split"
-    # Gesichtsmitte (120, 125): 160 x 90 um sie herum, das Gesicht sitzt etwas ueber der Mitte.
-    assert rect == (40, 84, 160, 90)
+    # Keine Kante zu finden: Links und oben reicht der Rahmen bis zum Bildrand, sonst Standardgroesse.
+    assert rect == (0, 0, 200, 174)
 
 
 def test_sample_times_are_inside_range():
@@ -414,6 +434,7 @@ def test_starter_pack_covers_all_categories_and_user_files_join(tmp_path):
 
 def test_clean_assessment_removes_markdown_and_hashtags():
     raw = Assessment(
+        reaction=1,
         hook=1,
         payoff=1,
         emotion=1,
@@ -454,6 +475,39 @@ def test_export_text_has_sections_and_credit():
     assert "TITEL\nTitle" in text
     assert "Credit: Name\nOriginal: https://twitch.tv/videos/1" in text
     assert "#gta6 #fun" in text
+
+
+def test_censor_masks_slurs_by_default_and_profanity_on_request():
+    assert censor_text("You know I got a nigga outside") == "You know I got a n**** outside"
+    assert censor_text("what the fuck bro") == "what the fuck bro"
+    assert censor_text("what the fuck bro", "all") == "what the f*** bro"
+    assert censor_text("a nigga", "none") == "a nigga"
+
+
+def test_censor_leaves_harmless_words_alone():
+    for text in ("spicy night in Nigeria", "flame retardant", "a raccoon on the bridge"):
+        assert censor_text(text, "all") == text
+    assert contains_slur("NIGGERS")
+    assert not contains_slur("Nigeria")
+
+
+def test_export_text_masks_title_and_description():
+    spec = _spec(title="nigga moment", description="wow nigga", hashtags=[])
+    text = export_text(spec, {})
+    assert "n**** moment" in text
+    assert "wow n****" in text
+    assert "nigga" not in text
+
+
+def test_spec_uses_hook_when_model_gives_no_title():
+    candidate = {
+        "id": "c",
+        "start": 0.0,
+        "end": 1.0,
+        "peak": 0.5,
+        "assessment": {"hooks": ["first", "b", "c"], "title": ""},
+    }
+    assert spec_from_candidate(candidate, {}).title == "first"
 
 
 def test_spec_from_candidate_uses_assessment_and_cam():

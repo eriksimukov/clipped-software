@@ -133,6 +133,18 @@ export function SettingsPage({ onError }: { onError: (message: string) => void }
 
       <section className="card form">
         <h2>Clip-Auswahl</h2>
+        <label>
+          In Untertiteln, Hooks und Texten maskieren
+          <select
+            value={settings.style.censor}
+            onChange={(event) => setStyle({ censor: event.target.value as Settings["style"]["censor"] })}
+          >
+            <option value="slurs">Beleidigungen</option>
+            <option value="all">Beleidigungen und Flüche</option>
+            <option value="none">Nichts</option>
+          </select>
+        </label>
+        <p className="hint">Der Ton bleibt unverändert. Clips mit Beleidigungen im Ton werden markiert und abgewertet.</p>
         <div className="form-row">
           <label>
             Mindestlänge (s)

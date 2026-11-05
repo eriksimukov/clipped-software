@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import tomllib
 from pathlib import Path
+from typing import Literal
 
 import tomli_w
 from pydantic import BaseModel, Field, field_validator
@@ -75,6 +76,8 @@ class Download(BaseModel):
 class Style(BaseModel):
     highlight_color: str = Field(default="#FFE500", pattern=r"^#[0-9A-Fa-f]{6}$")
     subtitle_size: int = Field(default=148, ge=40, le=220)
+    # none: nichts, slurs: Beleidigungen, all: zusaetzlich Flueche. Gilt fuer Text im Bild und Export.
+    censor: Literal["none", "slurs", "all"] = "slurs"
 
 
 class Settings(BaseModel):
