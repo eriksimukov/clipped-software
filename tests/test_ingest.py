@@ -10,7 +10,15 @@ import pytest
 
 from clipped.config import Settings
 from clipped.pipeline.common import VodPaths, read_json, vod_id_for, write_json
-from clipped.pipeline.ingest import _download_chat, ingest, is_url, set_time_range
+from clipped.pipeline.ingest import (
+    _download_chat,
+    explain_download_error,
+    ingest,
+    is_url,
+    link_problem,
+    set_time_range,
+    ytdlp_options,
+)
 
 HAS_FFMPEG = shutil.which("ffmpeg") is not None
 
@@ -126,7 +134,7 @@ def test_failed_download_raises_readable_error(tmp_path):
 
 def test_unreachable_chat_service_does_not_raise(tmp_path):
     paths = VodPaths.for_vod(tmp_path, "x")
-    _download_chat("http://127.0.0.1:9/nichts", paths)
+    _download_chat("http://127.0.0.1:9/nichts", paths, Settings())
     assert list(paths.root.iterdir()) == []
 
 
@@ -160,3 +168,73 @@ def test_changing_time_range_discards_selection_only_when_different(tmp_path):
     set_time_range(paths, [1, 3])
     assert not paths.candidates.exists()
     assert read_json(paths.meta)["time_range"] == [1, 3]
+
+
+# Links und Anmeldung
+
+
+def test_link_with_extra_options_is_refused(tmp_path):
+    source = "https://www.youtube.com/watch?v=abc --cookies-from-browser"
+    assert "Leerzeichen" in link_problem(source)
+    assert link_problem("https://www.youtube.com/watch?v=abc") is None
+    assert link_problem("G:/mein ordner/stream.mp4") is None
+    with pytest.raises(ValueError, match="Leerzeichen"):
+        ingest(source, _settings(tmp_path))
+
+
+def test_no_login_is_used_by_default():
+    options = ytdlp_options(Settings())
+    assert "cookiefile" not in options
+    assert "cookiesfrombrowser" not in options
+
+
+def test_cookie_file_wins_over_browser():
+    settings = Settings()
+    settings.download.cookies_from_browser = "firefox"
+    assert ytdlp_options(settings)["cookiesfrombrowser"] == ("firefox",)
+    settings.download.cookies_file = "C:/c.txt"
+    options = ytdlp_options(settings)
+    assert options["cookiefile"] == "C:/c.txt"
+    assert "cookiesfrombrowser" not in options
+
+
+def test_options_enable_javascript_and_disable_colors():
+    options = ytdlp_options(Settings())
+    assert set(options["js_runtimes"]) == {"deno", "node"}
+    assert options["color"] == "never"
+
+
+def test_unknown_browser_is_rejected():
+    with pytest.raises(ValueError, match="Unbekannter Browser"):
+        Settings.model_validate({"download": {"cookies_from_browser": "netscape"}})
+
+
+AGE_ERROR = (
+    "\x1b[0;31mERROR:\x1b[0m [youtube] abc: Sign in to confirm your age. "
+    "This video may be inappropriate for some users."
+)
+
+
+def test_age_restriction_is_explained_without_color_codes():
+    message = explain_download_error(AGE_ERROR, logged_in=False)
+    assert "altersbeschränkt" in message
+    assert "Einstellungen" in message
+    assert "\x1b" not in message
+
+
+def test_age_restriction_with_login_points_to_expired_cookies():
+    assert "nicht akzeptiert" in explain_download_error(AGE_ERROR, logged_in=True)
+
+
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [
+        ("ERROR: [youtube] abc: Sign in to confirm you\u2019re not a bot", "Bot"),
+        ("ERROR: Could not copy Chrome cookie database. See link", "Cookie-Datei"),
+        ("ERROR: Failed to decrypt with DPAPI. See link", "Cookie-Datei"),
+        ("ERROR: [youtube] abc: Private video. Sign in", "nicht öffentlich"),
+        ("ERROR: [generic] x: Unable to download webpage", "Download fehlgeschlagen: [generic]"),
+    ],
+)
+def test_common_download_errors_are_explained(raw, expected):
+    assert expected in explain_download_error(raw, logged_in=False)

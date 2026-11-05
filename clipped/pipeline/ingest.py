@@ -20,6 +20,7 @@ from clipped.pipeline.common import (
 Progress = Callable[[str, float], None]
 
 URL_RE = re.compile(r"^https?://", re.IGNORECASE)
+ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
 CHAT_LANGS = ["rechat", "live_chat"]
 
 
@@ -27,7 +28,71 @@ def is_url(source: str) -> bool:
     return bool(URL_RE.match(source.strip()))
 
 
-def _download_video(url: str, paths: VodPaths, progress: Progress) -> dict:
+def link_problem(source: str) -> str | None:
+    """Findet Eingaben, die wie ein Link aussehen, aber keiner sind."""
+    if is_url(source) and re.search(r"\s", source.strip()):
+        return (
+            "Der Link darf keine Leerzeichen enthalten. Zusatzoptionen wie --cookies-from-browser "
+            "gehören nicht in dieses Feld, die Anmeldung stellst du unter Einstellungen ein."
+        )
+    return None
+
+
+def has_login(settings: Settings) -> bool:
+    return bool(settings.download.cookies_file or settings.download.cookies_from_browser)
+
+
+def ytdlp_options(settings: Settings) -> dict:
+    """Gemeinsame Grundeinstellungen fuer Video und Chat."""
+    options: dict = {
+        "quiet": True,
+        "no_warnings": True,
+        "noprogress": True,
+        # Sonst landen Farbcodes der Konsole in den Fehlermeldungen der Oberflaeche.
+        "color": "never",
+        # YouTube verlangt inzwischen JavaScript. Beide Laufzeiten startet yt-dlp abgeschottet.
+        "js_runtimes": {"deno": {}, "node": {}},
+    }
+    download = settings.download
+    if download.cookies_file:
+        options["cookiefile"] = download.cookies_file
+    elif download.cookies_from_browser:
+        options["cookiesfrombrowser"] = (download.cookies_from_browser,)
+    return options
+
+
+def explain_download_error(message: str, logged_in: bool) -> str:
+    """Uebersetzt die haeufigen Faelle in etwas, womit man weiterarbeiten kann."""
+    clean = ANSI_RE.sub("", message).strip().removeprefix("ERROR:").strip()
+    lowered = clean.lower()
+    if "confirm your age" in lowered or "age-restricted" in lowered:
+        if logged_in:
+            return (
+                "Dieses Video ist altersbeschränkt, und die hinterlegte Anmeldung wurde nicht "
+                "akzeptiert. Sie ist vielleicht abgelaufen oder das Konto ist nicht altersbestätigt. "
+                "Exportiere die Cookies neu oder gib die Videodatei direkt an."
+            )
+        return (
+            "Dieses Video ist altersbeschränkt, YouTube liefert es nur mit Anmeldung. Hinterlege "
+            "unter Einstellungen eine Anmeldung oder gib die Videodatei direkt an."
+        )
+    if "not a bot" in lowered:
+        return (
+            "YouTube hält diesen Zugriff für einen Bot und verlangt eine Anmeldung. Versuche es "
+            "später noch einmal, hinterlege unter Einstellungen eine Anmeldung oder gib die "
+            "Videodatei direkt an."
+        )
+    if "could not copy" in lowered and "cookie" in lowered or "dpapi" in lowered:
+        return (
+            "Der Browser gibt seine Cookies nicht frei. Chrome und Edge sperren sie unter Windows "
+            "häufig. Nutze unter Einstellungen stattdessen eine Cookie-Datei."
+        )
+    if "private video" in lowered or "members-only" in lowered or "join this channel" in lowered:
+        return f"Dieses Video ist nicht öffentlich zugänglich. Originalmeldung: {clean}"
+    return f"Download fehlgeschlagen: {clean}"
+
+
+def _download_video(url: str, paths: VodPaths, progress: Progress, settings: Settings) -> dict:
     import yt_dlp
 
     def hook(status: dict) -> None:
@@ -37,15 +102,13 @@ def _download_video(url: str, paths: VodPaths, progress: Progress) -> dict:
                 progress("download", status.get("downloaded_bytes", 0) / total)
 
     options = {
+        **ytdlp_options(settings),
         "format": "bv*[height<=1080]+ba/b[height<=1080]/b",
         # H.264 dekodiert auf dem Prozessor am schnellsten und laeuft in jedem Browser.
         "format_sort": ["res:1080", "fps", "vcodec:h264", "acodec:m4a"],
         "merge_output_format": "mp4",
         "outtmpl": str(paths.root / "source.%(ext)s"),
         "continuedl": True,
-        "quiet": True,
-        "no_warnings": True,
-        "noprogress": True,
         "progress_hooks": [hook],
     }
     progress("download", 0.0)
@@ -53,7 +116,7 @@ def _download_video(url: str, paths: VodPaths, progress: Progress) -> dict:
         with yt_dlp.YoutubeDL(options) as ydl:
             info = ydl.extract_info(url, download=True)
     except yt_dlp.utils.YoutubeDLError as exc:
-        raise RuntimeError(f"Download fehlgeschlagen: {exc}") from exc
+        raise RuntimeError(explain_download_error(str(exc), has_login(settings))) from exc
 
     # requested_downloads nennt die fertige Datei; im Ordner koennten noch Teilformate liegen.
     downloads = (info or {}).get("requested_downloads") or []
@@ -73,7 +136,7 @@ def _download_video(url: str, paths: VodPaths, progress: Progress) -> dict:
     }
 
 
-def _download_chat(url: str, paths: VodPaths) -> None:
+def _download_chat(url: str, paths: VodPaths, settings: Settings) -> None:
     """Eigener Lauf: Scheitert der Chat, darf das weder Video noch Clips gefaehrden.
 
     Fehlt das Replay, faellt nur das Chat-Signal weg und die anderen Signale uebernehmen.
@@ -81,14 +144,12 @@ def _download_chat(url: str, paths: VodPaths) -> None:
     import yt_dlp
 
     options = {
+        **ytdlp_options(settings),
         "skip_download": True,
         "writesubtitles": True,
         "subtitleslangs": CHAT_LANGS,
         "outtmpl": str(paths.root / "source.%(ext)s"),
         "ignoreerrors": True,
-        "quiet": True,
-        "no_warnings": True,
-        "noprogress": True,
     }
     try:
         with yt_dlp.YoutubeDL(options) as ydl:
@@ -128,6 +189,9 @@ def ingest(
 ) -> VodPaths:
     """Idempotent: bereits vorhandene Ergebnisse werden wiederverwendet."""
     source = source.strip().strip('"')
+    problem = link_problem(source)
+    if problem:
+        raise ValueError(problem)
     paths = VodPaths.for_vod(settings.paths.data_dir, vod_id_for(source))
 
     if paths.meta.exists():
@@ -137,7 +201,7 @@ def ingest(
             write_json(paths.meta, meta)
     else:
         if is_url(source):
-            meta = _download_video(source, paths, progress)
+            meta = _download_video(source, paths, progress, settings)
         else:
             video = Path(source)
             if not video.is_file():
@@ -158,7 +222,7 @@ def ingest(
     if not paths.chat.exists():
         if is_url(source):
             progress("chat", 0.0)
-            _download_chat(source, paths)
+            _download_chat(source, paths, settings)
         meta["chat_messages"] = _collect_chat(paths)
         write_json(paths.meta, meta)
 

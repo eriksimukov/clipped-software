@@ -6,7 +6,7 @@ import tomllib
 from pathlib import Path
 
 import tomli_w
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 ROOT = Path(__file__).resolve().parent.parent
 CONFIG_DIR = ROOT / "config"
@@ -55,6 +55,23 @@ class Branding(BaseModel):
     channels: list[Channel] = Field(default_factory=list)
 
 
+BROWSERS = ("firefox", "chrome", "edge", "brave", "opera", "vivaldi", "chromium")
+
+
+class Download(BaseModel):
+    """Freiwillige Anmeldung fuer altersbeschraenkte Videos. Standardmaessig aus."""
+
+    cookies_file: str = ""
+    cookies_from_browser: str = ""
+
+    @field_validator("cookies_from_browser")
+    @classmethod
+    def known_browser(cls, value: str) -> str:
+        if value and value not in BROWSERS:
+            raise ValueError(f"Unbekannter Browser: {value}")
+        return value
+
+
 class Style(BaseModel):
     highlight_color: str = Field(default="#FFE500", pattern=r"^#[0-9A-Fa-f]{6}$")
     subtitle_size: int = Field(default=148, ge=40, le=220)
@@ -68,6 +85,7 @@ class Settings(BaseModel):
     render: Render = Field(default_factory=Render)
     branding: Branding = Field(default_factory=Branding)
     style: Style = Field(default_factory=Style)
+    download: Download = Field(default_factory=Download)
 
 
 def load_settings(path: Path | None = None) -> Settings:

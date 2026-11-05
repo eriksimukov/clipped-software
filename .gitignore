@@ -10,8 +10,9 @@ __pycache__/
 node_modules/
 web/dist/
 
-# Lokale Einstellungen (Handles, Pfade)
+# Lokale Einstellungen (Handles, Pfade) und Anmeldedaten
 config/settings.toml
+*cookies*.txt
 
 # Medien, Modelle, Arbeitsdaten - gehoeren nie ins Repo
 data/

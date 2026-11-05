@@ -149,6 +149,29 @@ def test_adding_same_vod_twice_does_not_duplicate_job(env):
     assert len(env["client"].get("/api/vods").json()) == 1
 
 
+def test_link_with_extra_options_is_rejected_and_nothing_is_queued(env):
+    response = env["client"].post(
+        "/api/vods", json={"source": "https://x.test/v --cookies-from-browser"}
+    )
+    assert response.status_code == 400
+    assert "Leerzeichen" in response.json()["detail"]
+    assert env["client"].get("/api/jobs").json() == []
+
+
+def test_settings_keep_login_paths_and_check_the_file(env, tmp_path):
+    settings = env["client"].get("/api/settings").json()
+    assert settings["download"] == {"cookies_file": "", "cookies_from_browser": ""}
+
+    settings["download"]["cookies_file"] = str(tmp_path / "fehlt.txt")
+    assert env["client"].put("/api/settings", json=settings).status_code == 400
+
+    cookies = tmp_path / "youtube-cookies.txt"
+    cookies.write_text("# Netscape HTTP Cookie File\n", encoding="utf-8")
+    settings["download"]["cookies_file"] = f'"{cookies}"'
+    saved = env["client"].put("/api/settings", json=settings).json()["settings"]
+    assert saved["download"]["cookies_file"] == str(cookies)
+
+
 def test_add_missing_file_is_rejected(env):
     response = env["client"].post("/api/vods", json={"source": "C:/does/not/exist.mp4"})
     assert response.status_code == 400

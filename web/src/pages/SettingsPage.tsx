@@ -1,6 +1,7 @@
 import { FormEvent, useEffect, useState } from "react";
 import { api, Channel, Settings } from "../api";
 
+const BROWSERS = ["firefox", "chrome", "edge", "brave", "opera", "vivaldi", "chromium"];
 const PLATFORMS = ["tiktok", "youtube", "instagram", "twitch", "kick", "x", "facebook", "discord"];
 
 export function SettingsPage({ onError }: { onError: (message: string) => void }) {
@@ -25,6 +26,8 @@ export function SettingsPage({ onError }: { onError: (message: string) => void }
     change((old) => ({ ...old, clips: { ...old.clips, ...values } }));
   const setStyle = (values: Partial<Settings["style"]>) =>
     change((old) => ({ ...old, style: { ...old.style, ...values } }));
+  const setDownload = (values: Partial<Settings["download"]>) =>
+    change((old) => ({ ...old, download: { ...old.download, ...values } }));
 
   function setChannel(index: number, values: Partial<Channel>) {
     setBranding({
@@ -151,6 +154,36 @@ export function SettingsPage({ onError }: { onError: (message: string) => void }
           </label>
         </div>
         <p className="hint">Gilt für neue VODs. Ein Vorschlag braucht auf deinem PC nur wenige Sekunden.</p>
+      </section>
+
+      <section className="card form">
+        <h2>Anmeldung für altersbeschränkte Videos</h2>
+        <p className="hint">
+          Nur nötig, wenn YouTube ein Video ohne Anmeldung nicht herausgibt. Laut yt-dlp kann ein Konto dabei gesperrt werden,
+          vorübergehend oder dauerhaft. Nimm am besten ein Zweitkonto. Die Cookie-Datei ist der empfohlene Weg, die Schritte stehen
+          in der README. Wenn du beides leer lässt, wird nichts verwendet.
+        </p>
+        <label>
+          Cookie-Datei
+          <input
+            value={settings.download.cookies_file}
+            onChange={(event) => setDownload({ cookies_file: event.target.value })}
+            placeholder="C:\Pfad\zu\youtube-cookies.txt"
+          />
+        </label>
+        <label>
+          Oder Cookies direkt aus dem Browser lesen
+          <select
+            value={settings.download.cookies_from_browser}
+            onChange={(event) => setDownload({ cookies_from_browser: event.target.value })}
+          >
+            <option value="">Nicht verwenden</option>
+            {BROWSERS.map((browser) => (
+              <option key={browser}>{browser}</option>
+            ))}
+          </select>
+        </label>
+        <p className="hint">Die Cookie-Datei hat Vorrang. Chrome und Edge sperren ihre Cookies unter Windows häufig, Firefox klappt eher.</p>
       </section>
 
       <section className="card form">

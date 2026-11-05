@@ -38,6 +38,26 @@ GTA 6 und GTA V lassen sich am Bild allein nicht zuverlässig unterscheiden. Lä
 
 Die Facecam wird automatisch erkannt. Stimmt der Rahmen nicht, ziehe ihn im Editor unter „Layout" zurecht. Die Korrektur gilt dann für alle offenen Clips des VODs und wird für künftige VODs des Streamers gespeichert.
 
+## Altersbeschränkte Videos
+
+YouTube gibt manche Videos nur mit Anmeldung heraus, GTA-Inhalte offenbar häufig. Dann gibt es zwei Wege:
+
+**Ohne Konto:** Du besorgst dir das Video selbst und gibst den Dateipfad an, oder nimmst einen anderen Link.
+
+**Mit Konto:** Du hinterlegst in den Einstellungen eine Anmeldung. Sie ist standardmäßig aus.
+
+> yt-dlp warnt, dass ein Konto dabei gesperrt werden kann, vorübergehend oder dauerhaft. Nimm am besten ein Zweitkonto und nutze die Anmeldung nur, wenn es nötig ist. Eine Cookie-Datei ist so sensibel wie ein Passwort: Sie gehört weder in Chats noch ins Repo.
+
+Die Cookie-Datei ist der von yt-dlp empfohlene Weg:
+
+1. Öffne ein privates Browserfenster und melde dich bei YouTube an.
+2. Rufe im selben Tab `https://www.youtube.com/robots.txt` auf. Es darf der einzige private Tab sein.
+3. Exportiere die Cookies von `youtube.com` mit einer Erweiterung: „Get cookies.txt LOCALLY" für Chrome oder „cookies.txt" für Firefox. Die ähnlich benannte Erweiterung „Get cookies.txt" ohne „LOCALLY" wurde laut yt-dlp als Schadsoftware gemeldet.
+4. Schließe das private Fenster und öffne diese Sitzung nicht wieder, sonst tauscht YouTube die Cookies aus und die Datei wird ungültig.
+5. Speichere die Datei als `config/youtube-cookies.txt` und trage den Pfad in den Einstellungen ein. Dateien mit `cookies` im Namen landen nicht im Repo.
+
+Alternativ kann die App die Cookies direkt aus dem Browser lesen. Das ist bequemer, greift aber auf deine normale Sitzung zu. Bei Chrome und Edge schlägt es unter Windows oft fehl, weil sie ihre Cookies sperren. Auf diesem PC ist das noch nicht getestet.
+
 ## Eigene Sounds
 
 Lege Dateien in `assets/sfx/whoosh`, `impact`, `riser` oder `pop`. Sie werden zusammen mit dem eingebauten Starter-Pack verwendet. Details und Lizenzen stehen in [assets/README.md](assets/README.md).
@@ -78,6 +98,7 @@ Beim ersten Transkribieren lädt die Software zusätzlich `large-v3`, rund 3 GB,
 | `Ollama meldet Fehler 500` | Grafikspeicher voll oder GPU belegt. Spiele und andere GPU-Programme schließen, dann „Erneut versuchen" |
 | `cublas64_12.dll` fehlt | `uv sync` ausführen, die CUDA-Bibliotheken kommen als Python-Pakete |
 | `Eine Anwendungssteuerungsrichtlinie hat diese Datei blockiert` | Windows Smart App Control prüft neue DLLs online. Auf diesem PC hat es einmal eine numpy-DLL blockiert und beim nächsten Versuch zugelassen. Erst noch einmal versuchen |
+| `Dieses Video ist altersbeschränkt` | Siehe Abschnitt „Altersbeschränkte Videos" |
 | Kein Chat-Signal | Nicht jedes VOD hat ein abrufbares Chat-Replay. Die Auswahl nutzt dann Audio und Sprache |
 
 ## Für die Entwicklung

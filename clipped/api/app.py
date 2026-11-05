@@ -22,7 +22,7 @@ from clipped.config import ROOT, Settings, load_settings, save_settings
 from clipped.db.store import Store
 from clipped.jobs.worker import Worker, relative_cam
 from clipped.pipeline.common import VodPaths, probe_video, read_json, vod_id_for, write_json
-from clipped.pipeline.ingest import is_url
+from clipped.pipeline.ingest import is_url, link_problem
 from clipped.pipeline.spec import ClipSpec
 from clipped.pipeline.subtitles import apply_text_edits, chunk_words, flatten_words
 
@@ -214,6 +214,9 @@ def create_app(
         source = request.source.strip().strip('"')
         if not source:
             raise HTTPException(400, "Bitte einen Link oder Dateipfad angeben.")
+        problem = link_problem(source)
+        if problem:
+            raise HTTPException(400, problem)
         if not is_url(source) and not Path(source).is_file():
             raise HTTPException(400, f"Datei nicht gefunden: {source}")
         validate_time_range(request.time_range)
@@ -491,6 +494,10 @@ def create_app(
             settings = Settings.model_validate(body)
         except ValidationError as exc:
             raise HTTPException(422, exc.errors(include_url=False, include_input=False)) from exc
+        cookies_file = settings.download.cookies_file.strip().strip('"')
+        if cookies_file and not Path(cookies_file).is_file():
+            raise HTTPException(400, f"Cookie-Datei nicht gefunden: {cookies_file}")
+        settings.download.cookies_file = cookies_file
         save_settings(settings, settings_path)
         return {
             "settings": settings.model_dump(mode="json"),

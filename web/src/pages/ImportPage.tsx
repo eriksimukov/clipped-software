@@ -137,7 +137,8 @@ export function ImportPage({ jobs, onError }: Props) {
           </label>
         </div>
         <p className="hint">
-          Der Zeitbereich überschreibt die automatische GTA-6-Erkennung. Das hilft, wenn im VOD auch andere Spiele laufen.
+          Altersbeschränkte YouTube-Videos brauchen eine <a href="#/settings">Anmeldung in den Einstellungen</a> oder die Videodatei
+          selbst. Der Zeitbereich überschreibt die automatische GTA-6-Erkennung. Das hilft, wenn im VOD auch andere Spiele laufen.
         </p>
         <div className="form-actions">
           <button className="primary" disabled={busy || !source.trim()}>

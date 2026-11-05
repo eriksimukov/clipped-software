@@ -156,6 +156,7 @@ export interface Settings {
   render: { width: number; height: number; fps: number; video_encoder: string; target_lufs: number };
   branding: { watermark: string; endcard_title: string; endcard_seconds: number; channels: Channel[] };
   style: { highlight_color: string; subtitle_size: number };
+  download: { cookies_file: string; cookies_from_browser: string };
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
