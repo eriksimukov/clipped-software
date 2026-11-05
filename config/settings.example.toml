@@ -17,7 +17,7 @@ device = "cuda"
 
 [llm]
 host = "http://127.0.0.1:11434"
-model = "qwen3:8b"
+model = "gemma4:e4b"
 
 [render]
 width = 1080
@@ -26,9 +26,13 @@ fps = 30
 video_encoder = "h264_nvenc"
 target_lufs = -14.0
 
+[style]
+highlight_color = "#FFE500"
+subtitle_size = 148
+
 [branding]
 watermark = "@deinhandle"
-endcard_title = "Mehr GTA 6 Clips"
+endcard_title = "MORE GTA 6 CLIPS"
 endcard_seconds = 2.5
 
 [[branding.channels]]

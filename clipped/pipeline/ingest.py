@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Callable
 from pathlib import Path
-from typing import Callable
 
 from clipped.config import Settings
 from clipped.pipeline.chat import parse_chat_file
@@ -55,12 +55,12 @@ def _download(url: str, paths: VodPaths, progress: Progress) -> dict:
     if info is None:
         raise RuntimeError(f"Download fehlgeschlagen: {url}")
 
-    video = next(
-        (p for p in paths.root.glob("source.*") if p.suffix.lower() in {".mp4", ".mkv", ".webm"}),
-        None,
-    )
-    if video is None:
+    # requested_downloads nennt die fertige Datei; im Ordner koennten noch Teilformate liegen.
+    downloads = info.get("requested_downloads") or []
+    filepath = downloads[0].get("filepath") if downloads else None
+    if not filepath or not Path(filepath).is_file():
         raise RuntimeError(f"Keine Videodatei nach dem Download gefunden: {url}")
+    video = Path(filepath)
 
     return {
         "video": str(video),
@@ -85,6 +85,16 @@ def _collect_chat(paths: VodPaths) -> int:
                 print(f"Chat-Datei {path.name} nicht lesbar: {exc}")
     write_json(paths.chat, messages)
     return len(messages)
+
+
+def set_time_range(paths: VodPaths, time_range: list[float] | None) -> None:
+    """Merkt den manuellen Zeitbereich. Bei einer Aenderung wird die Auswahl neu aufgebaut."""
+    meta = read_json(paths.meta)
+    if meta.get("time_range") == time_range:
+        return
+    meta["time_range"] = time_range
+    write_json(paths.meta, meta)
+    paths.candidates.unlink(missing_ok=True)
 
 
 def ingest(

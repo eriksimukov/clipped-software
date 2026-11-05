@@ -31,7 +31,7 @@ class Transcribe(BaseModel):
 
 class Llm(BaseModel):
     host: str = "http://127.0.0.1:11434"
-    model: str = "qwen3:8b"
+    model: str = "gemma4:e4b"
 
 
 class Render(BaseModel):
@@ -49,9 +49,14 @@ class Channel(BaseModel):
 
 class Branding(BaseModel):
     watermark: str = "@deinhandle"
-    endcard_title: str = "Mehr GTA 6 Clips"
+    endcard_title: str = "MORE GTA 6 CLIPS"
     endcard_seconds: float = 2.5
     channels: list[Channel] = Field(default_factory=list)
+
+
+class Style(BaseModel):
+    highlight_color: str = Field(default="#FFE500", pattern=r"^#[0-9A-Fa-f]{6}$")
+    subtitle_size: int = Field(default=148, ge=40, le=220)
 
 
 class Settings(BaseModel):
@@ -61,11 +66,14 @@ class Settings(BaseModel):
     llm: Llm = Field(default_factory=Llm)
     render: Render = Field(default_factory=Render)
     branding: Branding = Field(default_factory=Branding)
+    style: Style = Field(default_factory=Style)
 
 
 def load_settings(path: Path | None = None) -> Settings:
     """Liest die Einstellungen; ohne settings.toml gilt die Beispieldatei."""
-    candidates = [path] if path else [CONFIG_DIR / "settings.toml", CONFIG_DIR / "settings.example.toml"]
+    candidates = (
+        [path] if path else [CONFIG_DIR / "settings.toml", CONFIG_DIR / "settings.example.toml"]
+    )
     for candidate in candidates:
         if candidate and candidate.exists():
             with candidate.open("rb") as handle:

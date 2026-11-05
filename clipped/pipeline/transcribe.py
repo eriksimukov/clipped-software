@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import gc
 import wave
+from collections.abc import Callable
 from pathlib import Path
-from typing import Callable
 
 import numpy as np
 
@@ -45,34 +45,34 @@ def transcribe(
         compute_type=cfg.compute_type,
         download_root=str(settings.paths.data_dir / "models"),
     )
-    try:
-        raw_segments, _info = model.transcribe(
-            load_wav(paths.audio),
-            language=settings.clips.language,
-            word_timestamps=True,
-            vad_filter=True,
-            # Verhindert, dass sich Halluzinationen ueber lange Streams fortpflanzen.
-            condition_on_previous_text=False,
+    raw_segments, _info = model.transcribe(
+        load_wav(paths.audio),
+        language=settings.clips.language,
+        word_timestamps=True,
+        vad_filter=True,
+        # Verhindert, dass sich Halluzinationen ueber lange Streams fortpflanzen.
+        condition_on_previous_text=False,
+    )
+    segments = []
+    for segment in raw_segments:
+        segments.append(
+            {
+                "start": segment.start,
+                "end": segment.end,
+                "text": segment.text.strip(),
+                "words": [
+                    {"start": w.start, "end": w.end, "word": w.word.strip(), "p": w.probability}
+                    for w in (segment.words or [])
+                ],
+            }
         )
-        segments = []
-        for segment in raw_segments:
-            segments.append(
-                {
-                    "start": segment.start,
-                    "end": segment.end,
-                    "text": segment.text.strip(),
-                    "words": [
-                        {"start": w.start, "end": w.end, "word": w.word.strip(), "p": w.probability}
-                        for w in (segment.words or [])
-                    ],
-                }
-            )
-            if duration:
-                progress("transcribe", min(segment.end / duration, 1.0))
-    finally:
-        # Die GPU wird fuer das Sprachmodell gebraucht, also Speicher sofort freigeben.
-        del model
-        gc.collect()
+        if duration:
+            progress("transcribe", min(segment.end / duration, 1.0))
+
+    # Die GPU wird fuer das Sprachmodell gebraucht. Der Generator haelt das Modell noch fest,
+    # deshalb muessen beide Referenzen weg, bevor der Speicher frei wird.
+    del raw_segments, model
+    gc.collect()
 
     write_json(paths.transcript, {"language": settings.clips.language, "segments": segments})
     progress("transcribe", 1.0)

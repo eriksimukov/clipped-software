@@ -13,12 +13,18 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from clipped.config import load_settings  # noqa: E402
+from clipped.config import load_settings
 
 
 def run(cmd: list[str], timeout: int = 60) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
-        cmd, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=timeout
+        cmd,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        timeout=timeout,
+        check=False,
     )
 
 
@@ -35,9 +41,19 @@ def check_nvenc(encoder: str) -> tuple[bool, str]:
     """Kodiert wirklich ein paar Frames, denn die Encoder-Liste allein beweist nichts."""
     result = run(
         [
-            "ffmpeg", "-hide_banner", "-loglevel", "error",
-            "-f", "lavfi", "-i", "color=c=black:s=256x256:d=0.2",
-            "-c:v", encoder, "-f", "null", "-",
+            "ffmpeg",
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-f",
+            "lavfi",
+            "-i",
+            "color=c=black:s=256x256:d=0.2",
+            "-c:v",
+            encoder,
+            "-f",
+            "null",
+            "-",
         ]
     )
     if result.returncode != 0:
