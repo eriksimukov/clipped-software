@@ -1,0 +1,38 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+
+# Node
+node_modules/
+web/dist/
+
+# Lokale Einstellungen (Handles, Pfade)
+config/settings.toml
+
+# Medien, Modelle, Arbeitsdaten - gehoeren nie ins Repo
+data/
+export/
+models/
+*.mp4
+*.mkv
+*.webm
+*.flv
+*.ts.part
+*.wav
+*.m4a
+*.sqlite
+*.sqlite3
+*.db
+
+# Generierte Sounds (per scripts/make_sfx.py reproduzierbar)
+assets/sfx/**/*.mp3
+assets/sfx/generated/
+
+# Werkzeuge
+.claude/settings.local.json
+.DS_Store
+Thumbs.db
